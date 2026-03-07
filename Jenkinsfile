@@ -19,7 +19,8 @@ pipeline {
 
         stage('Build & Test') {
             steps {
-                sh './mvnw clean package -DskipTests' 
+                // We remove -DskipTests so JaCoCo can generate the coverage report
+                sh './mvnw clean package' 
             }
         }
 
