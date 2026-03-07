@@ -42,8 +42,12 @@ This document logs the step-by-step progress of the deployment phases. Store scr
 
 ### Steps Taken:
 1.  **SonarQube Up:** Started SonarQube container on port 9000.
-2.  **Jenkins Credentials:** Added Docker Hub and SonarQube tokens to Jenkins.
-3.  **Pipeline Job:** Created a new "Pipeline" project in Jenkins pointing to the GitHub repo.
+2.  **Jenkins Credentials:** Added `docker-hub-creds` and `sonar-token` to Jenkins.
+3.  **Create Pipeline Job:** 
+    *   New Item > Pipeline > `student-management`.
+    *   Set **Pipeline script from SCM**.
+    *   Configured Git URL and GitHub Credentials.
+    *   Set script path to `Jenkinsfile`.
 
 ### 📸 Screenshots to Capture:
 - [ ] **Screenshot 6:** `screenshot6_sonarqube.png` - SonarQube dashboard showing the first successful scan of the project.

@@ -9,23 +9,25 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
+        stage('Prepare') {
             steps {
-                checkout scm
+                // Ensure the Maven wrapper is executable
+                sh 'chmod +x mvnw'
+                echo "✅ Maven wrapper prepared"
             }
         }
 
         stage('Build & Test') {
             steps {
-                sh 'mvn clean package -DskipTests' 
+                sh './mvnw clean package -DskipTests' 
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
-                // Must configure 'sonar-server' in Jenkins System Config first
+                // 'sonar-server' must be configured in Jenkins Global Config
                 withSonarQubeEnv('sonar-server') {
-                    sh 'mvn sonar:sonar'
+                    sh './mvnw sonar:sonar'
                 }
             }
         }
