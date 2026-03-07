@@ -2,7 +2,6 @@ pipeline {
     agent any
 
     environment {
-        // 🚨 CHANGE THIS to your Docker Hub username
         DOCKER_HUB_USER = "oussk" 
         IMAGE_NAME = "student-management"
         DOCKER_CREDENTIALS_ID = 'docker-hub-creds'
