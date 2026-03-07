@@ -19,8 +19,8 @@ pipeline {
 
         stage('Build & Test') {
             steps {
-                // We remove -DskipTests so JaCoCo can generate the coverage report
-                sh './mvnw clean package' 
+                // -Ptest forces Maven to activate the test profile
+                sh './mvnw clean package -Dspring.profiles.active=test' 
             }
         }
 
