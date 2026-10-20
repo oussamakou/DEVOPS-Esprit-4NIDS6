@@ -29,6 +29,15 @@ Until that scan passes, this is a **blocked build being remediated**, not a clea
 No Azure production release was attempted or claimed. The CVE database may change later,
 so a pass on one day is not a permanent vulnerability-free guarantee.
 
+The next scan on Boot 4.1.1 cleared the original OS/Framework/Tomcat findings but
+still blocked five HIGH findings in Jackson 3.1.5, the version managed by Boot's
+BOM. The response was an explicit Jackson 3 BOM override to 3.1.7, the patched line
+listed in the report. Updating a framework version alone is not proof that every
+transitive dependency is patched. The same run passed the disposable k3s test,
+including an actual write/read, MySQL pod replacement, persistence and Prometheus UP.
+
+[Intermediate failing rescan and successful k3s test](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/39511097031)
+
 ## Interview explanation
 
 Explain the trigger, failed gate, affected package, selected upgrade, tests, rescan

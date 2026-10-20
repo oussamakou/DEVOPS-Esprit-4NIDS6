@@ -12,7 +12,7 @@ with three tests passing. It already used a multi-stage Dockerfile.
 
 The following are updated after the local implementation checks finish:
 
-- Maven build: passed with 6 tests, including actual HTTP create/read/delete,
+- Maven build: passed with 6 tests on Boot 4.1.1, including actual HTTP create/read/delete,
   health probes, Prometheus export and management/application port separation.
 - Terraform init/validate: passed locally, without applying Azure resources.
 - Terraform provider lock includes Linux and Windows x86_64 checksums.
@@ -28,8 +28,15 @@ The following are updated after the local implementation checks finish:
   directories, with settings backed up. No container/volume/data disk was deleted.
   Local image build passed after retrying a Docker Hub TLS timeout. The engine later
   became unavailable again, so local Trivy/Compose runtime checks were not completed.
-- GitHub hosted workflow / Azure apply / k3s runtime / dashboard scrape and rollback:
-  not yet verified in a cloud account.
+- Hosted ephemeral k3s: passed the API write/read, MySQL pod replacement/PVC persistence,
+  workload readiness, monitoring deployment and Prometheus target-UP checks in
+  [run 39511097031](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/39511097031).
+- Azure apply, managed identity/OIDC deployment, off-VM backup restore and rollback
+  remain unverified in a cloud account.
+
+Hosted Maven, Gitleaks and Terraform/Checkov stages have passed. The first application
+Trivy scan blocked 11 HIGH/CRITICAL findings. See `SECURITY-GATE-CASE-STUDY.md` for the
+actual report and remediation, rather than treating that failed run as a completed release.
 
 The tool installer verifies SHA256 manifests fetched from each tool's release host.
 This detects corrupt/mismatched downloads; it is not independent verification of
