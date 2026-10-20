@@ -1,14 +1,22 @@
-# Stage 1: Build the JAR
-FROM maven:3.9.6-eclipse-temurin-17 AS builder
-WORKDIR /app
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
+# syntax=docker/dockerfile:1
+# CI uses its tested JAR. The local target builds from source for Docker Compose.
+FROM maven:3.9.11-eclipse-temurin-17 AS builder
+WORKDIR /build
+COPY pom.xml ./
+RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp dependency:go-offline
 COPY src ./src
-RUN mvn package -DskipTests -B
+RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp package -DskipTests
 
-# Stage 2: Runtime
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre-alpine AS runtime
+RUN addgroup -g 10001 app && adduser -D -u 10001 -G app app
 WORKDIR /app
-COPY --from=builder /app/target/student-management-0.0.1-SNAPSHOT.jar app.jar
-EXPOSE 8089
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"
+USER 10001:10001
+EXPOSE 8089 9090
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+
+FROM runtime AS ci
+COPY --chown=10001:10001 target/student-management-0.0.1-SNAPSHOT.jar /app/app.jar
+
+FROM runtime AS local
+COPY --from=builder --chown=10001:10001 /build/target/student-management-0.0.1-SNAPSHOT.jar /app/app.jar

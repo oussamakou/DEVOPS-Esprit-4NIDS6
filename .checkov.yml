@@ -1,0 +1,22 @@
+directory:
+  - terraform
+framework:
+  - terraform
+download-external-modules: false
+compact: true
+quiet: true
+external-checks-dir:
+  - checkov_checks
+# Paid enterprise controls omitted only with explanations in SECURITY.md.
+# All other Terraform policy failures are blocking; never use soft-fail here.
+skip-check:
+  - CKV_AZURE_50    # VM agent/extensions required by Azure Run Command; VM-scoped role.
+  - CKV_AZURE_119   # Single lab VM public IP; inbound restricted to owner /32.
+  - CKV_AZURE_139   # Basic ACR public endpoint needed by hosted runners; auth required.
+  - CKV_AZURE_163   # Paid Defender registry scan replaced by blocking Trivy app-image gate.
+  - CKV_AZURE_164   # Premium content trust not configured; image digest integrity only.
+  - CKV_AZURE_165   # Single-region learning lab; no geo-replication.
+  - CKV_AZURE_166   # Premium quarantine workflow omitted; scan before push instead.
+  - CKV_AZURE_167   # Premium retention feature omitted; manual image cleanup required.
+  - CKV_AZURE_233   # Single-region Basic SKU without zone redundancy.
+  - CKV_AZURE_237   # Premium dedicated data endpoints omitted.

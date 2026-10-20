@@ -1,0 +1,25 @@
+#cloud-config
+package_update: true
+packages: [curl, jq, ca-certificates, openssl]
+write_files:
+  - path: /etc/rancher/k3s/config.yaml
+    permissions: '0600'
+    content: |
+      write-kubeconfig-mode: "0600"
+      disable:
+        - traefik
+        - servicelb
+      secrets-encryption: true
+      # Avoid overlapping the Azure VNet (10.42/16).
+      cluster-cidr: 10.52.0.0/16
+      service-cidr: 10.53.0.0/16
+  - path: /usr/local/sbin/install-lab-k3s
+    permissions: '0700'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      curl --fail --silent --show-error --location https://get.k3s.io -o /tmp/install-k3s.sh
+      INSTALL_K3S_VERSION='${k3s_version}' sh /tmp/install-k3s.sh
+      rm /tmp/install-k3s.sh
+runcmd:
+  - [/usr/local/sbin/install-lab-k3s]

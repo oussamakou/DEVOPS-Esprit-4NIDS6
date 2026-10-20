@@ -1,0 +1,26 @@
+# These workloads need no general internet access or Azure metadata access.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: workload-egress
+  namespace: student
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+    - to:
+        - podSelector:
+            matchLabels: {app: mysql}
+      ports: [{protocol: TCP, port: 3306}]
+    - to:
+        - podSelector:
+            matchLabels: {app: student-app}
+        - podSelector:
+            matchLabels: {app: prometheus}
+      ports: [{protocol: TCP, port: 9090}]
