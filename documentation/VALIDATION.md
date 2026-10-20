@@ -12,20 +12,22 @@ with three tests passing. It already used a multi-stage Dockerfile.
 
 The following are updated after the local implementation checks finish:
 
-- Maven build and HTTP/management tests: pending final run.
+- Maven build: passed with 6 tests, including actual HTTP create/read/delete,
+  health probes, Prometheus export and management/application port separation.
 - Terraform init/validate: passed locally, without applying Azure resources.
 - Terraform provider lock includes Linux and Windows x86_64 checksums.
 - Python/YAML/dashboard structure and deploy bundle generation: passed initial structural check.
 - Gitleaks available Git history/current tree: passed with the exact historical
   classroom Secret fingerprint documented in SECURITY.md.
-- Checkov: 23 enabled checks passed, zero failures/parsing errors, with 10 explicit
+- Checkov: 26 enabled checks passed, zero failures/parsing errors, with 10 explicit
   lab policy exclusions documented in SECURITY.md. The isolated internet-wide SSH
-  rejection demonstration is checked separately.
-- GitHub workflow syntax/action lint and Linux shell syntax: pending final check.
+  rejection demonstration passed for CKV_LAB_1 on a temporary literal /0 fixture.
+- Workflow actionlint and Linux shell syntax: passed. Hosted CI also runs workflow
+  lint, the negative SSH test and supporting-file structural checks.
 - Docker Desktop: engine restored by preserving/renaming its runtime socket
   directories, with settings backed up. No container/volume/data disk was deleted.
-  Local image build initially hit a Docker Hub TLS handshake timeout. Image scan
-  and Compose runtime validation depend on a completed image pull/build.
+  Local image build passed after retrying a Docker Hub TLS timeout. The engine later
+  became unavailable again, so local Trivy/Compose runtime checks were not completed.
 - GitHub hosted workflow / Azure apply / k3s runtime / dashboard scrape and rollback:
   not yet verified in a cloud account.
 

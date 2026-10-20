@@ -45,7 +45,7 @@ Generated MySQL/Grafana credentials are created on the VM once and not printed i
 Deleting the MySQL Secret while keeping its data volume does not rotate the database
 password: use SQL to rotate credentials and update the Secret in a controlled change.
 
-## Narrow historical Gitleaks exception
+## SSH policy verification
 
 `checkov_checks/InternetSSH.py` supplements Checkov's built-in SSH rule: the pinned
 version's address matcher did not reject a literal `0.0.0.0/0` in our isolated fixture.
@@ -53,6 +53,8 @@ The custom CKV_LAB_1 policy handles that CIDR, IPv6 /0, wildcard/service tags an
 ranges. Terraform also restricts the actual owner admin_cidr to one valid IPv4 /32.
 `scripts/prove-ssh-gate.py` verifies that the insecure fixture is rejected, without
 creating any Azure resource. Keep this negative test when updating scanner versions.
+
+## Narrow historical Gitleaks exception
 
 The original school commit `2477b2221dfc7baf0ae66c1a5fd6f9dc3a873d1f` contains
 `k8s/mysql-secret.yaml`, a public classroom example containing literal `root` and

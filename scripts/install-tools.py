@@ -52,7 +52,8 @@ def install(name):
     destination.parent.mkdir(exist_ok=True)
     # Recheck downloads on every invocation. Do not silently trust a stale local tool.
     sums = fetch(f"{base}/{manifest}").decode()
-    matching = [line.split()[0] for line in sums.splitlines() if line.split()[-1].lstrip("*") == archive]
+    matching = [line.split()[0] for line in sums.splitlines()
+                if line.split() and Path(line.split()[-1].lstrip("*")).name == archive]
     if len(matching) != 1:
         raise RuntimeError(f"No unique checksum for {archive}")
     payload = fetch(f"{base}/{archive}")

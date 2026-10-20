@@ -127,9 +127,13 @@ creates an additional database; it does not replace the live database.
 
 ## Prove a security gate safely
 
-For Checkov, use a temporary Terraform fixture outside `terraform/` containing an
-NSG SSH rule with source `0.0.0.0/0`, and run Checkov with `--check CKV_AZURE_10`.
-Record the expected failure, then delete the fixture. Never apply it to Azure.
+For Checkov, run `python scripts/prove-ssh-gate.py` in an environment with Checkov
+installed. On Windows, use the Checkov environment's Python and pass its
+`Scripts/checkov` launcher as the script argument. This creates a temporary fixture
+outside `terraform/` with internet-wide SSH, verifies that CKV_LAB_1 rejects it,
+and removes it. The built-in SSH check in the pinned scanner did not reject the
+literal /0 case, which is why the project supplies and tests an additional policy.
+The workflow repeats this negative test. No fixture is applied to Azure.
 For Gitleaks, use a synthetic fixture that matches a documented test rule, never a
 real credential. For Trivy, retain an actual report and fix the identified package
 or base image version. A multi-stage build alone does not remove vulnerable Java
