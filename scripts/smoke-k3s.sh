@@ -13,6 +13,10 @@ cleanup() {
     kubectl -n student get events --sort-by=.lastTimestamp || true
     kubectl -n student logs deployment/student-app --tail=80 || true
     kubectl -n student logs deployment/mysql --tail=50 || true
+    kubectl -n student logs deployment/grafana --tail=100 || true
+    kubectl -n student logs deployment/grafana --previous --tail=60 || true
+    kubectl -n student logs deployment/prometheus --tail=60 || true
+    kubectl -n student get pods -o json | jq '[.items[] | {name:.metadata.name,containers:[.status.containerStatuses[]? | {name,state,lastState}]}]' || true
   fi
   [ -z "${prom_pid:-}" ] || kill "$prom_pid" 2>/dev/null || true
   .tools/k3d cluster delete student-ci || true
