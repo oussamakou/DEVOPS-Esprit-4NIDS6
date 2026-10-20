@@ -40,7 +40,7 @@ jobs:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('pom.xml') }}
           restore-keys: ${{ runner.os }}-maven-
-      - run: bash mvnw -B -ntp verify
+      - run: bash ./mvnw -B -ntp verify
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: tested-jar
@@ -88,6 +88,11 @@ jobs:
           .tools/terraform -chdir=terraform init -backend=false -input=false
           .tools/terraform -chdir=terraform validate
       - run: pip install --disable-pip-version-check checkov==3.3.29
+      - name: Prove the SSH rejection gate and validate supporting files
+        run: |
+          python scripts/prove-ssh-gate.py
+          python scripts/validate-project.py
+          for script in scripts/*.sh; do bash -n "$script"; done
       - run: checkov --config-file .checkov.yml -o cli -o junitxml --output-file-path console,checkov.xml
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
