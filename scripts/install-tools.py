@@ -14,7 +14,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSIONS = {"terraform": "1.13.5", "gitleaks": "8.30.1", "trivy": "0.76.0", "actionlint": "1.7.11"}
+VERSIONS = {"terraform": "1.13.5", "gitleaks": "8.30.1", "trivy": "0.76.0", "actionlint": "1.7.11", "k3d": "5.9.0"}
 
 
 def fetch(url):
@@ -30,7 +30,11 @@ def install(name):
     ext = "zip" if name == "terraform" or windows else "tar.gz"
     if platform.machine().lower() not in ("amd64", "x86_64"):
         raise RuntimeError("This helper supports x86_64 only.")
-    if name == "terraform":
+    if name == "k3d":
+        base = f"https://github.com/k3d-io/k3d/releases/download/v{version}"
+        archive = f"k3d-{system}-amd64" + (".exe" if windows else "")
+        manifest = "checksums.txt"
+    elif name == "terraform":
         base = f"https://releases.hashicorp.com/terraform/{version}"
         archive = f"terraform_{version}_{system}_amd64.zip"
         manifest = f"terraform_{version}_SHA256SUMS"
@@ -55,7 +59,9 @@ def install(name):
     if hashlib.sha256(payload).hexdigest() != matching[0]:
         raise RuntimeError(f"Checksum mismatch: {archive}")
     binary = name + (".exe" if windows else "")
-    if ext == "zip":
+    if name == "k3d":
+        data = payload
+    elif ext == "zip":
         with zipfile.ZipFile(io.BytesIO(payload)) as compressed:
             data = compressed.read(binary)
     else:

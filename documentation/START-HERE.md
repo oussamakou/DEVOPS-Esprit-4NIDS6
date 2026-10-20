@@ -80,6 +80,11 @@ unnecessarily serial jobs. No cloud credentials are needed for PR validation.
 Deployment remains skipped until the Azure setup is completed. Nothing is applied
 to Azure automatically by the Terraform validation job.
 
+The Docker stage also starts a disposable k3s cluster using k3d on the GitHub runner.
+It tests the actual image/manifests, API writes/reads, persistence after MySQL pod
+replacement and a Prometheus scrape. This requires no Azure account, and does not
+verify Azure provisioning, VM identity or the Azure-specific deployment script.
+
 ## Read in this order
 
 1. [`LEARNING-AND-INTERVIEW.md`](LEARNING-AND-INTERVIEW.md): concepts and real code paths.

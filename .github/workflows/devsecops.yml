@@ -105,7 +105,7 @@ jobs:
     name: 4 - Docker build
     needs: [build, secrets, iac]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -125,6 +125,13 @@ jobs:
           no-cache: ${{ inputs.cold_cache == true }}
           pull: true
       - run: sha256sum /tmp/image.tar > /tmp/image.tar.sha256
+      - name: Test the built image and manifests on ephemeral k3s
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/install-tools.py k3d
+          docker load --input /tmp/image.tar
+          bash scripts/smoke-k3s.sh "student-management:$COMMIT_SHA"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: application-image
