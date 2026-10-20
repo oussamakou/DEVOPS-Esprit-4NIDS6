@@ -42,6 +42,18 @@ The GitHub `azure-lab` environment was prepared with a master-only deployment br
 policy and `AZURE_DEPLOY_ENABLED=false` at repository scope. No Azure account,
 cloud resource or deployment credential was created by that preparation.
 
+## Final hosted verification
+
+[Run 39512642589](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/39512642589)
+verified code revision `0eff849`: all five non-deployment stages passed, including
+the patched Jackson 3.1.7 image and a full-image Trivy scan with zero HIGH/CRITICAL
+findings. The k3s test also passed with Grafana's 512-MiB memory limit, actual database
+persistence after pod replacement, and Prometheus scraping the service successfully.
+
+The Azure deployment job was skipped by the disabled repository flag. A successful
+CI/k3d run does not prove Azure account provisioning, VM bootstrap, role assignments
+or VM-side credential renewal; those require the Azure run described in the setup guide.
+
 The tool installer verifies SHA256 manifests fetched from each tool's release host.
 This detects corrupt/mismatched downloads; it is not independent verification of
 the publisher's signing identity. GitHub Actions are resolved to immutable commits.

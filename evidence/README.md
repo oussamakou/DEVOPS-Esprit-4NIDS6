@@ -8,11 +8,11 @@ Download evidence you want to retain before its retention period expires.
 | Claim | Required evidence | Current status |
 | --- | --- | --- |
 | Azure provisioned by Terraform | Reviewed plan, apply output, resource inventory | Not deployed |
-| Six security/build/deploy stages | Workflow run URL and gate reports | Implementation awaiting hosted run |
-| HIGH/CRITICAL blocked a release | Actual failing report and a later passing report for the fix | Not demonstrated |
+| Six security/build/deploy stages | Workflow run URL and gate reports | Five stages passed; Azure deployment intentionally disabled |
+| HIGH/CRITICAL blocked delivery | Actual failing report and a later passing report for the fix | Demonstrated before publication; see the security case study |
 | Faster deployment with caches | Multiple comparable cold/warm run timings | Not measured |
 | Smaller runtime image | Same-method size measurements before and after | Not measured |
-| Metrics monitored | Prometheus target UP and Grafana charts under API traffic | Not deployed |
+| Metrics monitored | Prometheus target UP and Grafana charts under API traffic | Ephemeral k3s target UP verified; Azure/dashboard visual verification pending |
 
 Use `python scripts/measure-workflow.py OWNER/REPO RUN_ID` after GitHub CLI login.
 Record at least three cold-cache and three warm-cache runs of the same commit.

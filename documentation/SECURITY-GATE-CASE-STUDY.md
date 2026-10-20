@@ -40,6 +40,13 @@ including an actual write/read, MySQL pod replacement, persistence and Prometheu
 
 ## Interview explanation
 
+**Verified outcome:** [run 39512642589](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/39512642589)
+passed Maven, Gitleaks, Terraform/Checkov, the image build and ephemeral k3s test,
+and the full-image Trivy gate with **zero HIGH/CRITICAL findings**. Azure deployment
+was intentionally skipped: the account/identity setup is still an owner action.
+The passing scan applies to that image and vulnerability database snapshot, not to
+all future image tags or every supporting infrastructure image.
+
 Explain the trigger, failed gate, affected package, selected upgrade, tests, rescan
 result and remaining risk. Do not claim a scan failed in production when it failed
 before publication. Do not attribute this fix to adding multi-stage Docker: that was
