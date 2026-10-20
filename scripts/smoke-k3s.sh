@@ -1,6 +1,7 @@
 #!/bin/bash
 # Ephemeral GitHub runner only. Does not use Azure or touch an existing cluster.
 set -euo pipefail
+[[ "${GITHUB_ACTIONS:-}" == true ]] || { echo 'This disposable-cluster test is restricted to GitHub runners.' >&2; exit 1; }
 image=$1
 [[ "$image" =~ ^student-management:[a-f0-9]{40}$ ]]
 work=$(mktemp -d)
@@ -20,7 +21,7 @@ cleanup() {
 }
 trap cleanup EXIT
 .tools/k3d cluster create student-ci --image rancher/k3s:v1.37.1-k3s1 \
-  --no-lb --port '30089:30089@server:0' --wait --timeout 180s \
+  --port '127.0.0.1:30089:30089@server:0' --wait --timeout 180s \
   --k3s-arg '--disable=traefik@server:*' --k3s-arg '--disable=servicelb@server:*'
 .tools/k3d image import "$image" --cluster student-ci
 # Use the explicit context; do not let subsequent commands select a user's cluster.

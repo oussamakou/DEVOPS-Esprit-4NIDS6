@@ -34,6 +34,13 @@ then explain which method and SQL operation each request triggers.
 
 ## 2. Docker: package the app
 
+The extension moved from Boot 3 to Boot 4.1.1 after the first Trivy report identified
+vulnerable Framework/Tomcat/Jackson versions. Boot 4 has more focused modules: this
+project explicitly includes Web MVC and metrics starters and their test counterparts.
+The HTTP test opts into `@AutoConfigureTestRestTemplate` and `@AutoConfigureMetrics`.
+Java stays at 17. See `SECURITY-GATE-CASE-STUDY.md` for the actual failing report;
+do not confuse that failure with a successful Azure release.
+
 An image is a packaged filesystem/configuration. A container is a running instance
 of that image. Docker makes the runtime portable, but does not make configuration,
 credentials or external services automatic.
