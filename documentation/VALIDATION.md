@@ -38,6 +38,10 @@ Hosted Maven, Gitleaks and Terraform/Checkov stages have passed. The first appli
 Trivy scan blocked 11 HIGH/CRITICAL findings. See `SECURITY-GATE-CASE-STUDY.md` for the
 actual report and remediation, rather than treating that failed run as a completed release.
 
+The GitHub `azure-lab` environment was prepared with a master-only deployment branch
+policy and `AZURE_DEPLOY_ENABLED=false` at repository scope. No Azure account,
+cloud resource or deployment credential was created by that preparation.
+
 The tool installer verifies SHA256 manifests fetched from each tool's release host.
 This detects corrupt/mismatched downloads; it is not independent verification of
 the publisher's signing identity. GitHub Actions are resolved to immutable commits.

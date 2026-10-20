@@ -42,7 +42,7 @@ try {
             ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $temporary -Encoding utf8
         $null = Invoke-AzJson -Arguments @('role', 'definition', 'create', '--role-definition', "@$temporary")
     }
-    foreach ($assignment in @(@{ Role = 'AcrPush'; Scope = $outputs.registry_id.value }, @{ Role = $roleName; Scope = $outputs.vm_id.value })) {
+    foreach ($assignment in @(@{ Role = 'AcrPush'; Scope = $outputs.registry_id.value }, @{ Role = 'Reader'; Scope = $outputs.registry_id.value }, @{ Role = $roleName; Scope = $outputs.vm_id.value })) {
         $current = @(Invoke-AzJson -Arguments @('role', 'assignment', 'list', '--assignee', $principal.id, '--scope', $assignment.Scope, '--role', $assignment.Role))
         if ($current.Count -eq 0) {
             $null = Invoke-AzJson -Arguments @('role', 'assignment', 'create', '--assignee-object-id', $principal.id, '--assignee-principal-type', 'ServicePrincipal', '--role', $assignment.Role, '--scope', $assignment.Scope)

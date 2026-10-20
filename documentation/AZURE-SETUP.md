@@ -88,7 +88,8 @@ powershell -ExecutionPolicy Bypass -File scripts/configure-azure-oidc.ps1
 ```
 
 This creates/reuses a named app/service principal, an environment-specific federated
-credential, AcrPush scoped to the registry, and a custom Run Command role assigned
+credential, AcrPush and Reader scoped to the registry (the CLI must read registry
+metadata), and a custom Run Command role assigned
 only to this VM. Review the script before running it. It does not create a client
 secret. If it reports existing objects, verify that their subject/permissions match
 the repository you intend to deploy; the script preserves existing credentials.

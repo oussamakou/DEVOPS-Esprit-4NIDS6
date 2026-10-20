@@ -29,7 +29,8 @@ OIDC subject by itself is not branch isolation. Protect master and require check
 Some environment protections depend on the GitHub plan/repository visibility.
 
 GitHub exchanges OIDC for temporary Azure tokens; there is no stored client secret.
-Its principal has registry AcrPush and a custom role on the single VM allowing read
+Its principal has AcrPush plus registry-scoped Reader (for `az acr show`/registry
+discovery), and a custom role on the single VM allowing read
 and Run Command. Run Command is root-equivalent **on that VM**. This is a deliberate
 lab simplification, not least-privilege Kubernetes RBAC. Never grant this identity
 subscription Contributor/Owner. Terraform is applied manually with the owner's account.
