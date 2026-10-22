@@ -62,6 +62,26 @@ risks, then update it when the architecture changes.
 
 ## Prepare resources in Azure Cloud Shell
 
+### Enable persistent storage first
+
+An actual session restart during this lab displayed the ephemeral-session banner
+and removed `~/student-course`. The repository commits remain on GitHub and Azure
+provider registrations remain subscription settings, but that session's unpushed
+files and logs disappeared. No VM deployment had run at that point.
+
+In Cloud Shell, open **Settings > Reset User Settings**, restart setup, select
+**Bash > Mount storage account**, choose **Azure for Students**, and create or
+select your own storage account/file share. Follow the
+[Microsoft persistent-storage setup](https://learn.microsoft.com/en-us/azure/cloud-shell/get-started/new-storage).
+The [storage-management guide](https://learn.microsoft.com/en-gb/azure/cloud-shell/persisting-shell-storage)
+explains how to switch from ephemeral mode.
+
+Keep this checkout (and its ignored Terraform state, plans and evidence logs) under
+the mounted `~/clouddrive` directory. After a fresh mount, start with the clone
+command below; on later sessions use `cd ~/clouddrive/student-course` and
+`git pull --ff-only`. Confirm storage is mounted before generating keys/state or
+applying a plan. Preserve a private backup of the SSH key as described below.
+
 The enabled Azure for Students subscription is usable, but VM family quota, regional
 availability and current student credit must be checked before applying. The tools
 VM baseline is 4 vCPU / 16 GB plus a 128 GB disk; the application uses 2 vCPU / 4 GB.
@@ -97,6 +117,7 @@ because the application image is built for linux/amd64.
 Use the coursework branch until the PR is merged:
 
 ```bash
+cd "$HOME/clouddrive"
 git clone --branch codex/azure-devsecops https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6.git student-course
 cd student-course
 az account show --query '{Name:name,State:state}' -o table
