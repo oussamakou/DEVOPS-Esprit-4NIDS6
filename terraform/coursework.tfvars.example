@@ -1,5 +1,6 @@
 # Use a separate state/workspace for this Compose lab; do not replace an existing k3s VM.
 subscription_id     = "YOUR-SUBSCRIPTION-ID"
+location            = "spaincentral"
 prefix              = "studentcourse"
 registry_name       = "YOURGLOBALLYUNIQUEREGISTRY"
 admin_cidr          = "203.0.113.10/32"

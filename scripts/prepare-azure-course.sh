@@ -10,7 +10,7 @@ cd "$root"
 echo '[1/7] Reading the Azure account (each account/provider request has a 120-second timeout)...'
 timeout 120s az account show --query '{Name:name,State:state}' --output table
 subscription=$(timeout 120s az account show --query id -o tsv)
-export COURSE_LOCATION=${COURSE_LOCATION:-francecentral}
+export COURSE_LOCATION=${COURSE_LOCATION:-spaincentral}
 export COURSE_APP_SIZE=${COURSE_APP_SIZE:-Standard_B2s}
 export COURSE_TOOLS_SIZE=${COURSE_TOOLS_SIZE:-Standard_D4s_v4}
 for provider in Microsoft.Compute Microsoft.Network Microsoft.ContainerRegistry; do

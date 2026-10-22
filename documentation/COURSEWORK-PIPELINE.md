@@ -75,6 +75,19 @@ regions** and inspect its **Parameters / allowedLocations** value. Choose a list
 region for the storage account and later recheck VM quota/SKUs in that region.
 A quota listing is not proof that resource deployment is permitted by this policy.
 
+The owner confirmed these allowed regions: `spaincentral`, `denmarkeast`,
+`germanywestcentral`, `italynorth`, `polandcentral`. This lab now defaults to
+`spaincentral` (Spain Central). It is policy-allowed, while storage creation, VM
+family quota and SKU eligibility in that region still require actual verification.
+The previous France Central quota output does not establish Spain Central's quota.
+
+In Cloud Shell's **Create storage account** pane, select **Spain Central**, keep
+resource group `devsecops-lab`, use a globally available account name containing
+only lowercase letters/digits (for example `devsecopsouss323d` if available), and
+set the file share to `ouss`. The previously entered `devsecops-ouss` is invalid
+because it contains a hyphen. If using the Azure Storage portal instead, a
+Standard StorageV2/LRS account with an SMB file share is suitable for this setup.
+
 An actual Cloud Shell storage attempt in West Europe was rejected with
 `RequestDisallowedByAzure` and the allowed-deployment-regions policy message.
 Do not cycle through regions or remove the subscription's policy. Inspect the
@@ -112,11 +125,11 @@ VM baseline is 4 vCPU / 16 GB plus a 128 GB disk; the application uses 2 vCPU / 
 These are billable resources. This project has not yet demonstrated a successful
 deployment of these new Compose services.
 
-The confirmed France Central quota is 6 total regional vCPUs, 4 Standard BS vCPUs,
-4 Standard DSv4 vCPUs and **zero Standard DSv5 vCPUs**. The coursework defaults are
-therefore `Standard_B2s` (app: 2 vCPUs / 4 GiB) plus `Standard_D4s_v4` (tools:
-4 vCPUs / 16 GiB), using all 6 regional vCPUs. The earlier D4s_v5 choice would
-exceed the family quota. Quota does not guarantee SKU eligibility or available
+The historical France Central quota was 6 total regional vCPUs, 4 Standard BS
+vCPUs, 4 Standard DSv4 vCPUs and **zero Standard DSv5 vCPUs**. Candidate sizes remain
+`Standard_B2s` (app: 2 vCPUs / 4 GiB) plus `Standard_D4s_v4` (tools:
+4 vCPUs / 16 GiB), requiring 6 regional vCPUs. Recheck the regional and family
+quota in Spain Central before choosing a pair. Quota does not guarantee SKU eligibility or available
 capacity: the preparation script now checks subscription SKU restrictions before
 generating inputs. It saves the returned restrictions in ignored `.tools/azure-skus.json`.
 Optional `COURSE_LOCATION`, `COURSE_APP_SIZE` and `COURSE_TOOLS_SIZE` environment
@@ -130,7 +143,7 @@ stops, capture its phase and error. From the existing checkout, update with
 Actual subscription discovery subsequently rejected `Standard_B2s` in France Central
 with `NotAvailableForSubscription`, despite its family quota being available. The
 quota-compatible defaults are therefore **not yet a confirmed eligible pair**.
-Run `bash scripts/discover-azure-sizes.sh francecentral` to query ten candidate
+Run `bash scripts/discover-azure-sizes.sh spaincentral` to query ten candidate
 sizes together. It reports eligible and restricted sizes, their families, CPU and
 memory, without generating inputs or a plan. Select a confirmed eligible 2-vCPU
 app size with at least 4 GiB and a 4-vCPU tools size with at least 16 GiB; their
@@ -148,7 +161,7 @@ az account show --query '{Name:name,State:state}' -o table
 az provider register --namespace Microsoft.Compute --wait
 az provider register --namespace Microsoft.Network --wait
 az provider register --namespace Microsoft.ContainerRegistry --wait
-az vm list-usage --location francecentral -o table
+az vm list-usage --location spaincentral -o table
 bash scripts/prepare-azure-course.sh YOUR_WORKSTATION_PUBLIC_IPV4/32
 ```
 
