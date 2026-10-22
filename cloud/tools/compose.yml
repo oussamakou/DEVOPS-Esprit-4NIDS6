@@ -1,7 +1,7 @@
 name: student-tools
 services:
   postgres:
-    image: postgres:17.6
+    image: postgres:17.11
     environment:
       POSTGRES_USER: sonar
       POSTGRES_DB: sonar
@@ -43,9 +43,9 @@ services:
     mem_limit: 4g
     restart: unless-stopped
   caddy:
-    image: caddy:2.10.2
+    image: caddy:2.11.7
     profiles: [https]
-    ports: ['80:80', '443:443', '8443:8443']
+    ports: ['443:443', '8443:8443']
     environment:
       SONAR_DOMAIN: ${SONAR_DOMAIN:-sonar.invalid}
       NEXUS_DOMAIN: ${NEXUS_DOMAIN:-nexus.invalid}

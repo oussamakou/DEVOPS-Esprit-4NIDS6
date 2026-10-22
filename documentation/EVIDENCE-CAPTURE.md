@@ -50,6 +50,23 @@ detects its byte-order marker and scans the decoded contents. A regression check
 confirms both that valid UTF-16 passes and that a merge marker in UTF-16 is rejected.
 This was a hook compatibility failure, not a discovered application vulnerability.
 
+## Actual coursework infrastructure finding
+
+The first enabled-tools Checkov scan rejected `tools_https` under CKV_AZURE_160:
+the NSG allowed public HTTP port 80 for certificate validation. The scan reported
+42 passing checks and one failure. Commit `83c5161` preserves this original
+configuration and a CI check that scans the optional tools resources explicitly;
+the default configuration alone would not test resources whose count was zero.
+No resources were applied from that revision. The correction closes port 80 and
+configures Caddy to use TLS-ALPN certificate validation on 443. The policy remains
+enabled; no ignore/soft-fail exception is added. Capture the red infrastructure
+step and the later passing rescan, and explain this network-exposure finding.
+
+[Actual failed infrastructure job](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/39805052147/job/119915917317).
+The [saved screenshot](screenshots/coursework_checkov_failed.png) shows that the
+optional-tools gate failed while earlier checks passed; expand the failed step
+while signed in to see the detailed CKV_AZURE_160 finding.
+
 ## Cloud screenshots after provisioning
 
 | Screenshot | What it proves |

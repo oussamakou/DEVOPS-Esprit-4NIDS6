@@ -32,13 +32,13 @@ resource "azurerm_network_security_rule" "tools_ssh" {
 
 resource "azurerm_network_security_rule" "tools_https" {
   count                       = var.enable_course_tools ? 1 : 0
-  name                        = "HTTPS-and-ACME-for-authenticated-tools"
+  name                        = "HTTPS-for-authenticated-tools"
   priority                    = 110
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
   source_port_range           = "*"
-  destination_port_ranges     = ["80", "443", "8443"]
+  destination_port_ranges     = ["443", "8443"]
   source_address_prefix       = "Internet"
   destination_address_prefix  = "*"
   resource_group_name         = azurerm_resource_group.lab.name

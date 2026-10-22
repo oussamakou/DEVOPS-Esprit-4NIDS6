@@ -162,6 +162,12 @@ jobs:
       - run: checkov --config-file .checkov.yml -o cli -o junitxml --output-file-path console,checkov.xml
       - name: Scan optional Azure coursework tools too
         run: checkov --config-file .checkov.yml --var-file terraform/coursework.tfvars.example -o cli -o junitxml --output-file-path console,checkov-course.xml
+      - name: Validate Azure Compose and HTTPS proxy configuration
+        run: |
+          python scripts/validate-course-config.py
+          docker run --rm -v "$PWD/cloud/tools/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -e SONAR_DOMAIN=sonar.example.test -e NEXUS_DOMAIN=nexus.example.test \
+            caddy:2.11.7 caddy adapt --config /etc/caddy/Caddyfile --validate > /tmp/caddy-config.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

@@ -100,7 +100,8 @@ the earlier lab. No additional public app port is opened for Compose; use SSH.
 
 Get `tools_public_ip`, `tools_fqdn` and `public_ip` from Terraform outputs. The tools
 VM has its own Azure DNS hostname. Sonar uses HTTPS 443; Nexus uses HTTPS 8443 on
-the same hostname. Caddy obtains certificates using port 80. No purchased domain
+the same hostname. Caddy obtains certificates using TLS-ALPN on port 443; public
+HTTP port 80 remains closed. No purchased domain
 is needed. Caddy's HTTPS profile is disabled during initial admin setup.
 
 Copy this checkout to the tools VM, or clone the branch there, then:
@@ -190,3 +191,4 @@ historical failures are real; exercises are clearly labelled simulations.
 - [Maven deployment credentials](https://maven.apache.org/guides/mini/guide-deployment-security-settings.html)
 - [Dependabot configuration](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference)
 - [SonarQube Linux host requirements](https://docs.sonarsource.com/sonarqube-server/2026.1/server-installation/pre-installation/linux)
+- [Caddy ACME challenge configuration](https://caddyserver.com/docs/caddyfile/directives/tls)

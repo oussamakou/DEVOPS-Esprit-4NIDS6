@@ -1,6 +1,20 @@
+{
+    auto_https disable_redirects
+}
+
+(https_only) {
+    tls {
+        issuer acme {
+            disable_http_challenge
+        }
+    }
+}
+
 {$SONAR_DOMAIN} {
+    import https_only
     reverse_proxy sonarqube:9000
 }
 {$NEXUS_DOMAIN} {
+    import https_only
     reverse_proxy nexus:8081
 }
