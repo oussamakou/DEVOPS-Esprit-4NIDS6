@@ -3,6 +3,7 @@
 This checks listed eligibility, not live allocation capacity. Quota and the actual
 Terraform plan must still be reviewed before applying.
 """
+import argparse
 import json
 from pathlib import Path
 import re
@@ -41,9 +42,12 @@ def fetch_skus(location, sizes):
 
 
 def main():
-    if len(sys.argv) < 3:
-        raise SystemExit("Usage: python scripts/check-azure-skus.py LOCATION VM_SIZE [VM_SIZE ...]")
-    location, *sizes = sys.argv[1:]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--report-only", action="store_true", help="Discover eligible/restricted sizes without preparing a deployment")
+    parser.add_argument("location")
+    parser.add_argument("sizes", nargs="+")
+    args = parser.parse_args()
+    location, sizes = args.location, args.sizes
     try:
         skus = fetch_skus(location, sizes)
     except (ValueError, subprocess.CalledProcessError) as error:
@@ -52,13 +56,23 @@ def main():
     output = Path(__file__).resolve().parents[1] / ".tools/azure-skus.json"
     output.parent.mkdir(exist_ok=True)
     output.write_text(json.dumps(skus, indent=2), encoding="utf-8")
+    failures = []
+    eligible = 0
     for size in sizes:
         try:
             sku = validate_sku(skus, size, location)
         except ValueError as error:
-            raise SystemExit(str(error)) from error
+            failures.append(str(error))
+            print(f"RESTRICTED / UNLISTED: {error}", flush=True)
+            continue
+        eligible += 1
         capabilities = {item["name"]: item["value"] for item in sku.get("capabilities", [])}
         print(f"Eligible SKU: {size}; family={sku.get('family')}; vCPUs={capabilities.get('vCPUs')}; memoryGB={capabilities.get('MemoryGB')}", flush=True)
+    if args.report_only:
+        print(f"Discovery complete: {eligible} eligible, {len(failures)} restricted/unlisted. No Terraform inputs, plan or Azure resources created.")
+        return
+    if failures:
+        raise SystemExit(f"Preparation blocked: {len(failures)} requested VM size(s) are restricted or unlisted. All requested sizes were checked.")
     print("SKU eligibility checked. Review remaining regional/family quota and the plan; live capacity is checked by Azure during deployment.")
 
 

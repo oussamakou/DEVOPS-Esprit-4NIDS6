@@ -4,10 +4,13 @@ import runpy
 import unittest
 from unittest.mock import patch
 import subprocess
+from contextlib import redirect_stdout
+import io
 
 helpers = runpy.run_path(str(Path(__file__).with_name("check-azure-skus.py")))
 validate = helpers["validate_sku"]
 fetch = helpers["fetch_skus"]
+main = helpers["main"]
 
 
 class SkuEligibilityTests(unittest.TestCase):
@@ -43,6 +46,27 @@ class SkuEligibilityTests(unittest.TestCase):
         with patch("subprocess.check_output", side_effect=subprocess.TimeoutExpired("az", 180)):
             with self.assertRaisesRegex(ValueError, "timed out after 180 seconds"):
                 fetch("francecentral", ["Standard_B2s"])
+
+    def test_preparation_reports_every_requested_size_and_still_blocks(self):
+        skus = [{"name": "Standard_B2s", "restrictions": [{"type": "Location", "values": ["francecentral"]}]},
+                {"name": "Standard_D4s_v4", "restrictions": []}]
+        output = io.StringIO()
+        with patch.dict(main.__globals__, {"fetch_skus": lambda *_: skus}), \
+                patch("sys.argv", ["check", "francecentral", "Standard_B2s", "Standard_D4s_v4"]), \
+                patch.object(Path, "write_text"), redirect_stdout(output):
+            with self.assertRaisesRegex(SystemExit, "Preparation blocked"):
+                main()
+        self.assertIn("RESTRICTED / UNLISTED", output.getvalue())
+        self.assertIn("Eligible SKU: Standard_D4s_v4", output.getvalue())
+
+    def test_report_only_lists_restrictions_without_starting_preparation(self):
+        sku = {"name": "Standard_B2s", "restrictions": [{"type": "Location", "values": ["francecentral"]}]}
+        output = io.StringIO()
+        with patch.dict(main.__globals__, {"fetch_skus": lambda *_: [sku]}), \
+                patch("sys.argv", ["check", "--report-only", "francecentral", "Standard_B2s"]), \
+                patch.object(Path, "write_text"), redirect_stdout(output):
+            main()
+        self.assertIn("0 eligible, 1 restricted/unlisted", output.getvalue())
 
 
 if __name__ == "__main__":

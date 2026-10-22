@@ -83,6 +83,17 @@ stops, capture its phase and error. From the existing checkout, update with
 `git pull --ff-only`, then save a rerun with `mkdir -p .tools` and
 `bash scripts/prepare-azure-course.sh YOUR_WORKSTATION_PUBLIC_IPV4/32 2>&1 | tee .tools/azure-prepare.log`.
 
+Actual subscription discovery subsequently rejected `Standard_B2s` in France Central
+with `NotAvailableForSubscription`, despite its family quota being available. The
+quota-compatible defaults are therefore **not yet a confirmed eligible pair**.
+Run `bash scripts/discover-azure-sizes.sh francecentral` to query ten candidate
+sizes together. It reports eligible and restricted sizes, their families, CPU and
+memory, without generating inputs or a plan. Select a confirmed eligible 2-vCPU
+app size with at least 4 GiB and a 4-vCPU tools size with at least 16 GiB; their
+combined regional and family usage must fit the quota table. Use the environment
+overrides above for the selected pair. ARM Bpsv2 sizes are deliberately excluded
+because the application image is built for linux/amd64.
+
 Use the coursework branch until the PR is merged:
 
 ```bash

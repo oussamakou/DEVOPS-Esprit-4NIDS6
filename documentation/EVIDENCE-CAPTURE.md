@@ -1,5 +1,21 @@
 # Capture real failures and their fixes
 
+## Actual Azure subscription eligibility failure
+
+Cloud Shell reached phase `[3/7]` and Azure reported:
+
+```text
+Standard_B2s is restricted in francecentral: NotAvailableForSubscription
+Preparation stopped at line 25 (exit 1). No apply command was run.
+```
+
+This is an actual subscription/SKU restriction encountered during preparation,
+not an application vulnerability or a failed resource deployment. Save a screenshot
+of that terminal output with the phase and error visible. The preparation gate
+blocked before Terraform inputs and resource creation. The follow-up is to discover
+eligible SKU alternatives, verify their family/regional quota and memory, then
+generate and review a new plan. Do not mark it fixed until that selection is verified.
+
 Keep the run URL, Git SHA, failing step, redacted report, explanation, remediation
 commit and passing rescan together. Include date/tool version, and capture enough
 of the page to identify the run. Hide credentials, private student records and
