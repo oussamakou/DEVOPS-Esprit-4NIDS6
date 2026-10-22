@@ -77,6 +77,11 @@ capacity: the preparation script now checks subscription SKU restrictions before
 generating inputs. It saves the returned restrictions in ignored `.tools/azure-skus.json`.
 Optional `COURSE_LOCATION`, `COURSE_APP_SIZE` and `COURSE_TOOLS_SIZE` environment
 variables override the defaults; review that region's quota and memory needs again.
+Preparation prints seven numbered phases. Account/provider requests time out after
+120 seconds; the combined VM SKU query times out after 180 seconds. If preparation
+stops, capture its phase and error. From the existing checkout, update with
+`git pull --ff-only`, then save a rerun with `mkdir -p .tools` and
+`bash scripts/prepare-azure-course.sh YOUR_WORKSTATION_PUBLIC_IPV4/32 2>&1 | tee .tools/azure-prepare.log`.
 
 Use the coursework branch until the PR is merged:
 
