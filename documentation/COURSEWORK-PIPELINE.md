@@ -69,6 +69,30 @@ and removed `~/student-course`. The repository commits remain on GitHub and Azur
 provider registrations remain subscription settings, but that session's unpushed
 files and logs disappeared. No VM deployment had run at that point.
 
+Before creating Cloud Shell storage, read **Azure Policy > Assignments** at the
+**Azure for Students** subscription scope. Open **Allowed resource deployment
+regions** and inspect its **Parameters / allowedLocations** value. Choose a listed
+region for the storage account and later recheck VM quota/SKUs in that region.
+A quota listing is not proof that resource deployment is permitted by this policy.
+
+An actual Cloud Shell storage attempt in West Europe was rejected with
+`RequestDisallowedByAzure` and the allowed-deployment-regions policy message.
+Do not cycle through regions or remove the subscription's policy. Inspect the
+assigned region list first. If automatic Cloud Shell storage creation picks a
+blocked region, create a storage account manually in an allowed region, then use
+**Select existing storage account** in Cloud Shell and select/create its file share.
+Storage account names must be globally unique, 3-24 lowercase letters/digits;
+`devsecops-ouss` contains a disallowed hyphen, so use a valid available name instead.
+See [Azure naming rules](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftstorage).
+
+If policy details are easier to retrieve from the terminal, an ephemeral session is
+sufficient for this read-only query; it does not need the checkout or persistent state:
+
+```bash
+az policy assignment list --disable-scope-strict-match true \
+  --query '[].{Policy:displayName,Scope:scope,Parameters:parameters}' -o json
+```
+
 In Cloud Shell, open **Settings > Reset User Settings**, restart setup, select
 **Bash > Mount storage account**, choose **Azure for Students**, and create or
 select your own storage account/file share. Follow the
