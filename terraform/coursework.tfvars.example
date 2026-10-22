@@ -8,5 +8,5 @@ ssh_public_key      = "ssh-ed25519 REPLACE_WITH_YOUR_PUBLIC_KEY"
 runtime             = "compose"
 enable_course_tools = true
 # Verify Azure for Students quota/availability first. Both VMs and disks incur costs.
-vm_size       = "Standard_B2s"
+vm_size       = "Standard_B2als_v2"
 tools_vm_size = "Standard_D4s_v4"

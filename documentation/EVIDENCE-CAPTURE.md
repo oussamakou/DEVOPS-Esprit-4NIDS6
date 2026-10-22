@@ -14,7 +14,14 @@ not an application vulnerability or a failed resource deployment. Save a screens
 of that terminal output with the phase and error visible. The preparation gate
 blocked before Terraform inputs and resource creation. The follow-up is to discover
 eligible SKU alternatives, verify their family/regional quota and memory, then
-generate and review a new plan. Do not mark it fixed until that selection is verified.
+generate and review a new plan.
+
+The follow-up discovery in policy-allowed Spain Central also rejected B2s, while
+accepting `Standard_B2als_v2` (2 vCPU / 4 GiB) and `Standard_D4s_v4` (4 vCPU /
+16 GiB). The owner's quota output showed 0/6 regional, 0/10 Basv2 and 0/4 DSv4
+vCPUs used. Capture those eligible rows and quota limits as the verified selection
+after the error. The coursework defaults now use that pair. This resolves the
+size-selection issue; it is not evidence of successful VM allocation or deployment.
 
 Keep the run URL, Git SHA, failing step, redacted report, explanation, remediation
 commit and passing rescan together. Include date/tool version, and capture enough

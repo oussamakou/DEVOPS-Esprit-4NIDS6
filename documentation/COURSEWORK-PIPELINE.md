@@ -77,9 +77,9 @@ A quota listing is not proof that resource deployment is permitted by this polic
 
 The owner confirmed these allowed regions: `spaincentral`, `denmarkeast`,
 `germanywestcentral`, `italynorth`, `polandcentral`. This lab now defaults to
-`spaincentral` (Spain Central). It is policy-allowed, while storage creation, VM
-family quota and SKU eligibility in that region still require actual verification.
-The previous France Central quota output does not establish Spain Central's quota.
+`spaincentral` (Spain Central). The subsequent Cloud Shell mount check and clone
+under `~/clouddrive/student-course` succeeded. Subscription discovery and quota
+were also checked there; actual VM allocation remains unverified.
 
 In Cloud Shell's **Create storage account** pane, select **Spain Central**, keep
 resource group `devsecops-lab`, use a globally available account name containing
@@ -126,11 +126,13 @@ These are billable resources. This project has not yet demonstrated a successful
 deployment of these new Compose services.
 
 The historical France Central quota was 6 total regional vCPUs, 4 Standard BS
-vCPUs, 4 Standard DSv4 vCPUs and **zero Standard DSv5 vCPUs**. Candidate sizes remain
-`Standard_B2s` (app: 2 vCPUs / 4 GiB) plus `Standard_D4s_v4` (tools:
-4 vCPUs / 16 GiB), requiring 6 regional vCPUs. Recheck the regional and family
-quota in Spain Central before choosing a pair. Quota does not guarantee SKU eligibility or available
-capacity: the preparation script now checks subscription SKU restrictions before
+vCPUs, 4 Standard DSv4 vCPUs and **zero Standard DSv5 vCPUs**. The subsequent Spain
+Central output listed `Standard_B2als_v2` (app: 2 vCPUs / 4 GiB) and
+`Standard_D4s_v4` (tools: 4 vCPUs / 16 GiB) as eligible. Spain Central had 0/6
+regional vCPUs, 0/10 Standard Basv2 family vCPUs and 0/4 Standard DSv4 family
+vCPUs used. These are now the defaults, consuming all 6 regional vCPUs if deployed.
+Eligibility and quota do not guarantee available capacity: the preparation script
+checks subscription SKU restrictions again before
 generating inputs. It saves the returned restrictions in ignored `.tools/azure-skus.json`.
 Optional `COURSE_LOCATION`, `COURSE_APP_SIZE` and `COURSE_TOOLS_SIZE` environment
 variables override the defaults; review that region's quota and memory needs again.
@@ -142,7 +144,9 @@ stops, capture its phase and error. From the existing checkout, update with
 
 Actual subscription discovery subsequently rejected `Standard_B2s` in France Central
 with `NotAvailableForSubscription`, despite its family quota being available. The
-quota-compatible defaults are therefore **not yet a confirmed eligible pair**.
+original B2s choice was therefore unsuitable. Spain Central discovery also rejected
+B2s but accepted the B2als_v2 replacement and the D4s_v4 tools size; the owner's
+quota output supports this pair. Allocation and deployment have not run yet.
 Run `bash scripts/discover-azure-sizes.sh spaincentral` to query ten candidate
 sizes together. It reports eligible and restricted sizes, their families, CPU and
 memory, without generating inputs or a plan. Select a confirmed eligible 2-vCPU

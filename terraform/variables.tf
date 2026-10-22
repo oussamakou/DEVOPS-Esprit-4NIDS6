@@ -46,7 +46,7 @@ variable "ssh_public_key" {
 
 variable "vm_size" {
   type        = string
-  default     = "Standard_B2s"
+  default     = "Standard_B2als_v2"
   description = "2 vCPU / 4 GB lab baseline. Not guaranteed free; verify regional availability/pricing."
 }
 
