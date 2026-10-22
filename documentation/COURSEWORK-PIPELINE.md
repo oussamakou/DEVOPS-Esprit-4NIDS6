@@ -122,8 +122,11 @@ applying a plan. Preserve a private backup of the SSH key as described below.
 The enabled Azure for Students subscription is usable, but VM family quota, regional
 availability and current student credit must be checked before applying. The tools
 VM baseline is 4 vCPU / 16 GB plus a 128 GB disk; the application uses 2 vCPU / 4 GB.
-These are billable resources. This project has not yet demonstrated a successful
-deployment of these new Compose services.
+These are billable resources. The owner applied the plan successfully: 19 added,
+0 changed, 0 destroyed in `studentcourse-rg`. Tools bootstrap reported
+`TOOLS_BOOTSTRAP_SUCCEEDED`: PostgreSQL was healthy and SonarQube/Nexus containers
+had started. Service readiness, authenticated HTTPS, application delivery and email
+still require verification.
 
 The historical France Central quota was 6 total regional vCPUs, 4 Standard BS
 vCPUs, 4 Standard DSv4 vCPUs and **zero Standard DSv5 vCPUs**. The subsequent Spain
@@ -146,7 +149,7 @@ Actual subscription discovery subsequently rejected `Standard_B2s` in France Cen
 with `NotAvailableForSubscription`, despite its family quota being available. The
 original B2s choice was therefore unsuitable. Spain Central discovery also rejected
 B2s but accepted the B2als_v2 replacement and the D4s_v4 tools size; the owner's
-quota output supports this pair. Allocation and deployment have not run yet.
+quota output supports this pair. The subsequent apply created both VMs successfully.
 Run `bash scripts/discover-azure-sizes.sh spaincentral` to query ten candidate
 sizes together. It reports eligible and restricted sizes, their families, CPU and
 memory, without generating inputs or a plan. Select a confirmed eligible 2-vCPU
@@ -243,9 +246,20 @@ Compose volumes survive container replacement, not VM/disk loss.
 
 The application VM receives AcrPull automatically. On your authenticated Azure
 session, run `scripts/configure-azure-oidc.ps1` with PowerShell after applying the
-coursework workspace. It creates/reuses the Entra application, GitHub federated
-identity, registry-scoped AcrPush/Reader and VM-scoped Run Command access. Its output
-lists the required identifiers. The script supports Windows and Linux Cloud Shell.
+coursework workspace. It creates/reuses a user-assigned managed identity in the
+lab resource group, a GitHub environment-specific federated credential,
+registry-scoped AcrPush/Reader and VM-scoped Run Command access. It registers
+`Microsoft.ManagedIdentity` if needed, uses the lab group's policy-allowed region,
+and prints the required identifiers. The script supports Windows and Linux Cloud Shell.
+The initial app-registration approach failed with `Insufficient privileges to
+complete the operation` because the owner's tenant blocks app creation. Managed
+identity federation uses Azure resource permissions instead, without Graph calls
+or a client secret. The caller still needs permission to create the identity and
+assign roles; an Azure RBAC/policy denial must be resolved by an authorized owner.
+Existing trust is checked against the exact repository/environment before roles
+are granted. Seven offline integration scenarios run in the infrastructure CI job.
+The managed identity, federation and role setup are managed by this script outside
+Terraform state; the identity/federation live inside the lab resource group.
 Run Command is root-equivalent on that one VM; do not use subscription Contributor.
 
 Set these **environment variables** in GitHub environment `azure-lab`:
@@ -292,3 +306,4 @@ historical failures are real; exercises are clearly labelled simulations.
 - [Dependabot configuration](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference)
 - [SonarQube Linux host requirements](https://docs.sonarsource.com/sonarqube-server/2026.1/server-installation/pre-installation/linux)
 - [Caddy ACME challenge configuration](https://caddyserver.com/docs/caddyfile/directives/tls)
+- [GitHub federation with a user-assigned managed identity](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust-user-assigned-managed-identity)

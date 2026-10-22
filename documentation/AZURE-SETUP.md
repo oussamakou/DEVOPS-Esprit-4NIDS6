@@ -87,19 +87,23 @@ After the Terraform apply, while logged in to Azure:
 powershell -ExecutionPolicy Bypass -File scripts/configure-azure-oidc.ps1
 ```
 
-This creates/reuses a named app/service principal, an environment-specific federated
-credential, AcrPush and Reader scoped to the registry (the CLI must read registry
+This creates/reuses a user-assigned managed identity in the lab resource group, an
+environment-specific federated credential, AcrPush and Reader scoped to the registry (the CLI must read registry
 metadata), and a custom Run Command role assigned
 only to this VM. Review the script before running it. It does not create a client
 secret. If it reports existing objects, verify that their subject/permissions match
-the repository you intend to deploy; the script preserves existing credentials.
+the repository you intend to deploy; the script rejects mismatched existing trust.
+It does not need directory permissions to register an app. Azure permissions to
+create managed identities and grant the scoped roles are still required. The
+script registers `Microsoft.ManagedIdentity` if needed and leaves the identity and
+federation inside the lab group, outside Terraform state.
 
 In GitHub Settings -> Environments, create **azure-lab** and restrict deployment
 branches to **master**. Add the printed identifiers as environment variables:
 
 | Variable | Source |
 | --- | --- |
-| AZURE_CLIENT_ID | OIDC app registration appId |
+| AZURE_CLIENT_ID | User-assigned managed identity clientId |
 | AZURE_TENANT_ID | Azure account tenantId |
 | AZURE_SUBSCRIPTION_ID | Azure subscription |
 | AZURE_RESOURCE_GROUP | Terraform resource_group output |

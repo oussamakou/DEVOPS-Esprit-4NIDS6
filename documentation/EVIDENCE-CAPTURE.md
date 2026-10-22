@@ -1,5 +1,24 @@
 # Capture real failures and their fixes
 
+## Actual Azure directory-permission failure
+
+After the 19-resource apply and successful tools-container bootstrap, the original
+OIDC setup attempted to create an Entra app registration and failed:
+
+```text
+ERROR: Directory permission is needed for the current user to register the application.
+Original error: Insufficient privileges to complete the operation.
+```
+
+Capture the Cloud Shell command, error and returned prompt. Azure subscription
+resource permissions do not automatically grant app-registration permissions in
+the tenant. The remediation changes the script to a user-assigned managed identity
+with GitHub federation, using Azure resource permissions and no Graph lookups.
+It retains registry-scoped push/read and single-VM Run Command assignments.
+Seven offline scenarios check trust, scopes, reruns and failure handling. Capture
+the successful identity setup and a real OIDC login only after they actually run;
+offline checks alone do not establish a successful cloud sign-in.
+
 ## Actual Azure subscription eligibility failure
 
 Cloud Shell reached phase `[3/7]` and Azure reported:

@@ -160,6 +160,9 @@ jobs:
           python scripts/prove-ssh-gate.py
           python scripts/validate-project.py
           for script in scripts/*.sh; do bash -n "$script"; done
+      - name: Check Azure identity setup without contacting Azure
+        shell: pwsh
+        run: ./scripts/test-azure-oidc.ps1
       - run: checkov --config-file .checkov.yml -o cli -o junitxml --output-file-path console,checkov.xml
       - name: Scan optional Azure coursework tools too
         run: checkov --config-file .checkov.yml --var-file terraform/coursework.tfvars.example -o cli -o junitxml --output-file-path console,checkov-course.xml
