@@ -1,0 +1,27 @@
+rules:
+  - id: java-runtime-command-execution
+    languages: [java]
+    severity: ERROR
+    message: Avoid Runtime.exec; user-controlled command strings can execute operating-system commands. Use a fixed allowlisted operation.
+    pattern: Runtime.getRuntime().exec(...)
+    metadata:
+      cwe: 'CWE-78: OS Command Injection'
+  - id: java-concatenated-sql
+    languages: [java]
+    severity: ERROR
+    message: Bind SQL parameters instead of concatenating values into a query.
+    patterns:
+      - pattern-either:
+          - pattern: $DB.createQuery($A + $B, ...)
+          - pattern: $DB.createNativeQuery($A + $B, ...)
+          - pattern: $DB.executeQuery($A + $B)
+          - pattern: $DB.executeUpdate($A + $B)
+    metadata:
+      cwe: 'CWE-89: SQL Injection'
+  - id: java-disabled-tls-hostname-verification
+    languages: [java]
+    severity: ERROR
+    message: Never accept every TLS hostname. Use the default hostname verifier.
+    pattern: $C.setHostnameVerifier(($HOST, $SESSION) -> true)
+    metadata:
+      cwe: 'CWE-295: Improper Certificate Validation'

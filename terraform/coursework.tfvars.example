@@ -1,0 +1,11 @@
+# Use a separate state/workspace for this Compose lab; do not replace an existing k3s VM.
+subscription_id     = "YOUR-SUBSCRIPTION-ID"
+prefix              = "studentcourse"
+registry_name       = "YOURGLOBALLYUNIQUEREGISTRY"
+admin_cidr          = "203.0.113.10/32"
+ssh_public_key      = "ssh-ed25519 REPLACE_WITH_YOUR_PUBLIC_KEY"
+runtime             = "compose"
+enable_course_tools = true
+# Verify Azure for Students quota/availability first. Both VMs and disks incur costs.
+vm_size       = "Standard_B2s"
+tools_vm_size = "Standard_D4s_v5"

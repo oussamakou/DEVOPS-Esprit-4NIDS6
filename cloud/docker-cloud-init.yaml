@@ -1,0 +1,11 @@
+#cloud-config
+package_update: true
+packages: [docker.io, docker-compose-v2, curl, jq, openssl, ca-certificates]
+write_files:
+  - path: /etc/sysctl.d/99-sonarqube.conf
+    content: |
+      vm.max_map_count=524288
+      fs.file-max=131072
+runcmd:
+  - [sysctl, --system]
+  - [systemctl, enable, --now, docker]

@@ -42,6 +42,7 @@ __pycache__/
 *.tfstate*
 *.tfplan
 *.tfvars
+*.tfvars.json
 !*.tfvars.example
 .terraform/
 terraform/backend.hcl

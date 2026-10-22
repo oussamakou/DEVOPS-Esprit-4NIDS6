@@ -4,6 +4,11 @@ An Azure extension of the existing Esprit student-management project, with Terra
 
 **Start with [the setup and project guide](documentation/START-HERE.md).**
 
+For the professor's checkout → Maven → SonarQube → Nexus → image → Azure Docker
+Compose → monitoring → email sequence, use the [Azure coursework guide](documentation/COURSEWORK-PIPELINE.md).
+It includes pre-commit hooks, commit SAST/dependency gates, a threat model and
+[labelled failure evidence exercises](documentation/EVIDENCE-CAPTURE.md).
+
 - [Learn the implementation and prepare for interviews](documentation/LEARNING-AND-INTERVIEW.md)
 - [Provision Azure and configure GitHub OIDC](documentation/AZURE-SETUP.md)
 - [Deploy, monitor, back up and roll back](documentation/OPERATIONS.md)

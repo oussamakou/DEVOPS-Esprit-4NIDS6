@@ -54,3 +54,25 @@ variable "k3s_version" {
   type    = string
   default = "v1.37.1+k3s1"
 }
+
+variable "runtime" {
+  type        = string
+  default     = "k3s"
+  description = "Use compose for the coursework pipeline; k3s preserves the original Azure lab. Changing an existing VM can replace it."
+  validation {
+    condition     = contains(["k3s", "compose"], var.runtime)
+    error_message = "Choose k3s or compose."
+  }
+}
+
+variable "enable_course_tools" {
+  type        = bool
+  default     = false
+  description = "Create the separate billable SonarQube/Nexus VM and its network."
+}
+
+variable "tools_vm_size" {
+  type        = string
+  default     = "Standard_D4s_v5"
+  description = "4 vCPU / 16 GB tools baseline. Check student quota, regional availability and price before applying."
+}

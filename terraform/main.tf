@@ -45,6 +45,7 @@ resource "azurerm_network_security_rule" "ssh" {
 }
 
 resource "azurerm_network_security_rule" "app" {
+  count                       = var.runtime == "k3s" ? 1 : 0
   name                        = "API-from-owner-only"
   priority                    = 110
   direction                   = "Inbound"
@@ -98,7 +99,7 @@ resource "azurerm_linux_virtual_machine" "lab" {
   patch_mode                      = "AutomaticByPlatform"
   patch_assessment_mode           = "AutomaticByPlatform"
   provision_vm_agent              = true
-  custom_data = base64encode(templatefile("${path.module}/cloud-init.yaml.tftpl", {
+  custom_data = base64encode(var.runtime == "compose" ? file("${path.module}/../cloud/docker-cloud-init.yaml") : templatefile("${path.module}/cloud-init.yaml.tftpl", {
     k3s_version = var.k3s_version
   }))
   admin_ssh_key {

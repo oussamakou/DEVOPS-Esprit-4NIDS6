@@ -1,0 +1,68 @@
+name: student-course
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Create the private runtime .env}
+      MYSQL_DATABASE: studentdb
+      MYSQL_USER: student
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Create the private runtime .env}
+    volumes: [mysql_data:/var/lib/mysql]
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -ustudent studentdb -e "SELECT 1"']
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    mem_limit: 1g
+    restart: unless-stopped
+  app:
+    image: ${APP_IMAGE:?Use the scanned ACR digest}
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/studentdb
+      DB_USERNAME: student
+      DB_PASSWORD: ${DB_PASSWORD:?Create the private runtime .env}
+    ports: ['127.0.0.1:8089:8089']
+    networks: [database, metrics]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.retention.time=24h, --storage.tsdb.retention.size=256MB]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports: ['127.0.0.1:9091:9090']
+    networks: [metrics]
+    mem_limit: 384m
+    restart: unless-stopped
+  grafana:
+    image: grafana/grafana:13.2.4
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Create the private runtime .env}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./datasources.yml:/etc/grafana/provisioning/datasources/student.yml:ro
+      - ./dashboards.yml:/etc/grafana/provisioning/dashboards/student.yml:ro
+      - ./student.json:/var/lib/grafana/dashboards/student.json:ro
+    ports: ['127.0.0.1:3000:3000']
+    networks: [metrics]
+    mem_limit: 384m
+    restart: unless-stopped
+networks:
+  database:
+    internal: true
+  metrics:
+    internal: true
+volumes:
+  mysql_data:
+  prometheus_data:
+  grafana_data:

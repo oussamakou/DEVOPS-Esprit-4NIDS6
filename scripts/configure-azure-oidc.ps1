@@ -10,8 +10,10 @@ function Invoke-AzJson {
 }
 if ($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Expected owner/repository.' }
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$terraform = Join-Path $repoRoot '.tools\terraform.exe'
-$rawOutputs = & $terraform "-chdir=$repoRoot\terraform" output -json
+$toolName = if ([Environment]::OSVersion.Platform -eq 'Win32NT') { 'terraform.exe' } else { 'terraform' }
+$terraform = Join-Path (Join-Path $repoRoot '.tools') $toolName
+$terraformDirectory = Join-Path $repoRoot 'terraform'
+$rawOutputs = & $terraform "-chdir=$terraformDirectory" output -json
 if ($LASTEXITCODE -ne 0) { throw 'Apply the Terraform configuration first.' }
 $outputs = $rawOutputs | ConvertFrom-Json
 $account = Invoke-AzJson -Arguments @('account', 'show')
@@ -52,7 +54,7 @@ try {
 
 Write-Host 'Create the GitHub environment azure-lab; restrict deployment branches to master.'
 Write-Host 'Set these environment variables (identifiers, not passwords):'
-@{
+$settings = @{
     AZURE_CLIENT_ID = $app.appId
     AZURE_TENANT_ID = $account.tenantId
     AZURE_SUBSCRIPTION_ID = $account.id
@@ -60,5 +62,10 @@ Write-Host 'Set these environment variables (identifiers, not passwords):'
     AZURE_VM_NAME = $outputs.vm_name.value
     ACR_NAME = $outputs.registry_name.value
     AZURE_DEPLOY_ENABLED = 'true'
-} | Format-Table -AutoSize
+}
+if ($outputs.runtime.value -eq 'compose') {
+    $settings['COMPOSE_VM_NAME'] = $outputs.vm_name.value
+    $settings['AZURE_DEPLOY_ENABLED'] = 'false'
+}
+$settings | Format-Table -AutoSize
 Write-Host 'AZURE_DEPLOY_ENABLED must be a repository variable because it controls job scheduling.'

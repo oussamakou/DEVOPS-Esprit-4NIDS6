@@ -1,5 +1,12 @@
 # Security model and lab limitations
 
+The optional coursework path uses Azure Docker Compose with loopback-only runtime
+ports, a separate SonarQube/Nexus VM, authenticated HTTPS tool endpoints and SMTP
+status notifications. Its threat model, setup boundaries and open risks are in
+`documentation/THREAT-MODEL.md` and `documentation/COURSEWORK-PIPELINE.md`.
+The rules below primarily describe the existing k3s path. Both delivery paths use
+blocking scans; the intentional-failure exercise is separate and never deploys.
+
 This is an educational single-node deployment, not a hardened production platform.
 Only synthetic student records belong in this unauthenticated HTTP API. Azure NSG
 rules restrict SSH and the application NodePort to one owner IPv4 /32. Kubernetes

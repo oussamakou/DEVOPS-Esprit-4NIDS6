@@ -1,0 +1,6 @@
+{$SONAR_DOMAIN} {
+    reverse_proxy sonarqube:9000
+}
+{$NEXUS_DOMAIN} {
+    reverse_proxy nexus:8081
+}
