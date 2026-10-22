@@ -73,6 +73,6 @@ variable "enable_course_tools" {
 
 variable "tools_vm_size" {
   type        = string
-  default     = "Standard_D4s_v5"
+  default     = "Standard_D4s_v4"
   description = "4 vCPU / 16 GB tools baseline. Check student quota, regional availability and price before applying."
 }

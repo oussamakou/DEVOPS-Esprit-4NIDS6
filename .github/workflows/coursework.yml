@@ -47,6 +47,7 @@ jobs:
         run: |
           pip install -r requirements-security.txt semgrep==1.182.1
           python scripts/test-security-controls.py
+          python scripts/test-azure-preflight.py
           python scripts/install-tools.py gitleaks trivy
           pre-commit run --all-files --show-diff-on-failure
           .tools/gitleaks git . --redact --report-format json --report-path gitleaks.json

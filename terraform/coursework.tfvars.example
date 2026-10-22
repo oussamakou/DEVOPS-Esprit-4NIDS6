@@ -8,4 +8,4 @@ runtime             = "compose"
 enable_course_tools = true
 # Verify Azure for Students quota/availability first. Both VMs and disks incur costs.
 vm_size       = "Standard_B2s"
-tools_vm_size = "Standard_D4s_v5"
+tools_vm_size = "Standard_D4s_v4"

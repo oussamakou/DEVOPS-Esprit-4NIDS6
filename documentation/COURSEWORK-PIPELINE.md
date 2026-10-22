@@ -68,6 +68,16 @@ VM baseline is 4 vCPU / 16 GB plus a 128 GB disk; the application uses 2 vCPU / 
 These are billable resources. This project has not yet demonstrated a successful
 deployment of these new Compose services.
 
+The confirmed France Central quota is 6 total regional vCPUs, 4 Standard BS vCPUs,
+4 Standard DSv4 vCPUs and **zero Standard DSv5 vCPUs**. The coursework defaults are
+therefore `Standard_B2s` (app: 2 vCPUs / 4 GiB) plus `Standard_D4s_v4` (tools:
+4 vCPUs / 16 GiB), using all 6 regional vCPUs. The earlier D4s_v5 choice would
+exceed the family quota. Quota does not guarantee SKU eligibility or available
+capacity: the preparation script now checks subscription SKU restrictions before
+generating inputs. It saves the returned restrictions in ignored `.tools/azure-skus.json`.
+Optional `COURSE_LOCATION`, `COURSE_APP_SIZE` and `COURSE_TOOLS_SIZE` environment
+variables override the defaults; review that region's quota and memory needs again.
+
 Use the coursework branch until the PR is merged:
 
 ```bash

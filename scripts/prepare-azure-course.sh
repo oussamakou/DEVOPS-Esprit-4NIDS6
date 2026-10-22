@@ -8,6 +8,9 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 az account show --query '{Name:name,State:state}' --output table
 subscription=$(az account show --query id -o tsv)
+export COURSE_LOCATION=${COURSE_LOCATION:-francecentral}
+export COURSE_APP_SIZE=${COURSE_APP_SIZE:-Standard_B2s}
+export COURSE_TOOLS_SIZE=${COURSE_TOOLS_SIZE:-Standard_D4s_v4}
 for provider in Microsoft.Compute Microsoft.Network Microsoft.ContainerRegistry; do
   state=$(az provider show --namespace "$provider" --query registrationState -o tsv)
   if [[ "$state" != Registered ]]; then
@@ -15,6 +18,7 @@ for provider in Microsoft.Compute Microsoft.Network Microsoft.ContainerRegistry;
     exit 1
   fi
 done
+python3 scripts/check-azure-skus.py "$COURSE_LOCATION" "$COURSE_APP_SIZE" "$COURSE_TOOLS_SIZE"
 if [[ -z "${COURSE_PUBLIC_KEY:-}" ]]; then
   mkdir -p "$HOME/.ssh"
   key="$HOME/.ssh/student-course"
@@ -33,9 +37,11 @@ if cidr.version != 4 or cidr.prefixlen != 32 or not cidr.network_address.is_glob
     raise SystemExit('Use your workstation public IPv4 /32, not Cloud Shell IP or 0.0.0.0/0')
 subscription = os.environ['COURSE_SUBSCRIPTION']
 values = dict(subscription_id=subscription, prefix='studentcourse',
+              location=os.environ['COURSE_LOCATION'],
               registry_name='studentcourse' + subscription.replace('-', '')[:12],
               admin_cidr=str(cidr), ssh_public_key=os.environ['COURSE_PUBLIC_KEY'],
-              runtime='compose', enable_course_tools=True)
+              runtime='compose', enable_course_tools=True,
+              vm_size=os.environ['COURSE_APP_SIZE'], tools_vm_size=os.environ['COURSE_TOOLS_SIZE'])
 Path('terraform/coursework.auto-inputs.tfvars.json').write_text(json.dumps(values, indent=2))
 PY
 python3 scripts/install-tools.py terraform
