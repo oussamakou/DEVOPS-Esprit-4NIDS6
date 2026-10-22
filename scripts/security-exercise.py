@@ -39,8 +39,9 @@ with tempfile.TemporaryDirectory(prefix="devsecops-exercise-") as directory:
         command = [sys.executable, str(ROOT / "scripts/check-files.py"), str(fixture)]
     try:
         result = subprocess.run(command, capture_output=True, text=True)
-    except FileNotFoundError:
-        raise SystemExit("Missing scanner: install the pinned tool before this exercise.")
+    except OSError:
+        print("EXERCISE_INVALID: scanner could not start; install the pinned tool first.")
+        sys.exit(2)
     output = result.stdout + result.stderr
     (reports / f"{args.kind}.log").write_text(output, encoding="utf-8")
     print(output, flush=True)
@@ -49,8 +50,15 @@ with tempfile.TemporaryDirectory(prefix="devsecops-exercise-") as directory:
         if not report.is_file():
             detected = False
         else:
-            data = json.loads(report.read_text(encoding="utf-8"))
-            detected = detected and bool(data if args.kind == "secret" else data.get("results"))
+            try:
+                data = json.loads(report.read_text(encoding="utf-8"))
+                if args.kind == "secret":
+                    finding = any(item.get("RuleID") == "github-pat" for item in data)
+                else:
+                    finding = any(item.get("check_id", "").endswith("java-runtime-command-execution") for item in data.get("results", []))
+                detected = detected and finding
+            except (ValueError, TypeError, AttributeError):
+                detected = False
     else:
         report.write_text(output, encoding="utf-8")
         detected = detected and "FAIL" in output
