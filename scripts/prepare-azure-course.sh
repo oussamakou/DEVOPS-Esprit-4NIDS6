@@ -8,14 +8,23 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 az account show --query '{Name:name,State:state}' --output table
 subscription=$(az account show --query id -o tsv)
-mkdir -p "$HOME/.ssh"
-key="$HOME/.ssh/student-course"
-if [[ ! -f "$key" ]]; then
-  ssh-keygen -t ed25519 -f "$key" -N '' -C student-course > /dev/null
+for provider in Microsoft.Compute Microsoft.Network Microsoft.ContainerRegistry; do
+  state=$(az provider show --namespace "$provider" --query registrationState -o tsv)
+  if [[ "$state" != Registered ]]; then
+    echo "$provider is $state. Run: az provider register --namespace $provider --wait" >&2
+    exit 1
+  fi
+done
+if [[ -z "${COURSE_PUBLIC_KEY:-}" ]]; then
+  mkdir -p "$HOME/.ssh"
+  key="$HOME/.ssh/student-course"
+  if [[ ! -f "$key" ]]; then
+    ssh-keygen -t ed25519 -f "$key" -N '' -C student-course > /dev/null
+  fi
+  COURSE_PUBLIC_KEY=$(cat "$key.pub")
 fi
 export COURSE_SUBSCRIPTION="$subscription"
 export COURSE_PUBLIC_KEY
-COURSE_PUBLIC_KEY=$(cat "$key.pub")
 python3 - <<'PY'
 import ipaddress, json, os
 from pathlib import Path

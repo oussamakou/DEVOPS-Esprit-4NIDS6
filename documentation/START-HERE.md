@@ -1,5 +1,10 @@
 # Azure DevSecOps lab: Spring Boot on k3s
 
+For the professor's SonarQube/Nexus/Docker Compose sequence, start with
+[the Azure coursework pipeline](COURSEWORK-PIPELINE.md). It uses Azure VMs and
+GitHub-hosted builds, with no local VM or Vagrant dependency. The k3s guide below
+describes the earlier deployment option.
+
 An extension of Oussama Koudhai's existing Esprit student-management project.
 The original Jenkins/Minikube implementation is preserved in
 [`LEGACY-JENKINS-MINIKUBE.md`](LEGACY-JENKINS-MINIKUBE.md). The Java API and

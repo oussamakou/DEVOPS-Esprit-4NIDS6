@@ -67,6 +67,10 @@ The [saved screenshot](screenshots/coursework_checkov_failed.png) shows that the
 optional-tools gate failed while earlier checks passed; expand the failed step
 while signed in to see the detailed CKV_AZURE_160 finding.
 
+[Passing rescan job](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/39805591559/job/119917830983)
+and [saved passing screenshot](screenshots/coursework_checkov_passed.png) confirm
+that the enabled-tools policy scan and Compose/Caddy validation subsequently passed.
+
 ## Cloud screenshots after provisioning
 
 | Screenshot | What it proves |

@@ -74,6 +74,9 @@ Use the coursework branch until the PR is merged:
 git clone --branch codex/azure-devsecops https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6.git student-course
 cd student-course
 az account show --query '{Name:name,State:state}' -o table
+az provider register --namespace Microsoft.Compute --wait
+az provider register --namespace Microsoft.Network --wait
+az provider register --namespace Microsoft.ContainerRegistry --wait
 az vm list-usage --location francecentral -o table
 bash scripts/prepare-azure-course.sh YOUR_WORKSTATION_PUBLIC_IPV4/32
 ```
@@ -81,9 +84,18 @@ bash scripts/prepare-azure-course.sh YOUR_WORKSTATION_PUBLIC_IPV4/32
 Use the public IPv4 of the computer from which you will SSH, **not** Cloud Shell's
 outbound address. The script reads the signed-in subscription, creates a separate
 `coursework` Terraform workspace, generates an SSH key if needed, and saves a plan.
+Prefer setting `COURSE_PUBLIC_KEY` in Cloud Shell to your workstation's existing
+SSH **public** key before running it. If you use the generated Cloud Shell key,
+download the private key securely to your workstation using Cloud Shell's file
+download control; never paste it into chat, Git or screenshots. The /32 rule permits
+your workstation, so SSH from Cloud Shell itself is not automatically permitted.
 It does not apply the plan. Keep Terraform state and the SSH private key in persistent
 Cloud Shell storage; ephemeral Cloud Shell sessions are insufficient for recovery.
 The generated `.tfvars.json`, plans and private keys are ignored by Git.
+An empty quota table does not mean unlimited quota: this subscription initially
+reported `Microsoft.Compute` as `NotRegistered`. Register Compute first, wait for
+`Registered`, and then check the regional and VM-family quotas again. Registration
+itself does not create the application resources.
 
 After reviewing the plan and checking quota/credit:
 

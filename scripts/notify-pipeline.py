@@ -13,7 +13,7 @@ message["Subject"] = f"DevSecOps pipeline: {os.environ['RUN_RESULT']}"
 message["From"] = os.environ["MAIL_FROM"]
 message["To"] = os.environ["MAIL_TO"]
 message.set_content(f"Pipeline status: {os.environ['RUN_RESULT']}\nRun and reports: {os.environ['RUN_URL']}\n")
-with smtplib.SMTP(os.environ["SMTP_HOST"], int(os.environ.get("SMTP_PORT", "587")), timeout=30) as smtp:
+with smtplib.SMTP(os.environ["SMTP_HOST"], int(os.environ.get("SMTP_PORT") or "587"), timeout=30) as smtp:
     smtp.starttls(context=ssl.create_default_context())
     smtp.login(os.environ["SMTP_USERNAME"], os.environ["SMTP_PASSWORD"])
     smtp.send_message(message)

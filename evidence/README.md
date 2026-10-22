@@ -13,6 +13,9 @@ Download evidence you want to retain before its retention period expires.
 | Faster deployment with caches | Multiple comparable cold/warm run timings | Not measured |
 | Smaller runtime image | Same-method size measurements before and after | Not measured |
 | Metrics monitored | Prometheus target UP and Grafana charts under API traffic | Ephemeral k3s target UP verified; Azure/dashboard visual verification pending |
+| Coursework sequence | SonarQube, Nexus, ACR, Azure Compose, monitoring and received email | Workflow/setup prepared; new cloud services are not provisioned or verified yet |
+| Commit security | Hooks, Semgrep, Java dependency report and SBOM | Passed in hosted run 39805591559 |
+| Coursework infrastructure error and fix | Failed CKV_AZURE_160 run and passing rescan | Runs 39805052147 / 39805591559; screenshots in documentation/screenshots |
 
 Use `python scripts/measure-workflow.py OWNER/REPO RUN_ID` after GitHub CLI login.
 Record at least three cold-cache and three warm-cache runs of the same commit.
