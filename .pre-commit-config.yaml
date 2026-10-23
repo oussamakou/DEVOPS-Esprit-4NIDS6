@@ -1,0 +1,17 @@
+minimum_pre_commit_version: '4.0.0'
+default_stages: [pre-commit]
+repos:
+  - repo: local
+    hooks:
+      - id: file-checks
+        name: Validate YAML, XML, merge markers and private-key files
+        entry: python scripts/check-files.py
+        language: python
+        additional_dependencies: [PyYAML==6.0.3]
+        types: [text]
+      - id: staged-secrets
+        name: Gitleaks staged secrets (redacted)
+        entry: python scripts/check-staged-secrets.py
+        language: python
+        pass_filenames: false
+        always_run: true

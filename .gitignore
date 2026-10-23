@@ -31,3 +31,29 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Secrets, local tools, infrastructure state and generated evidence
+.env
+.env.*
+!.env.example
+.tools/
+.venv*/
+__pycache__/
+*.tfstate*
+*.tfplan
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+.terraform/
+terraform/backend.hcl
+evidence/*.json
+evidence/*.txt
+evidence/*.csv
+*.tar
+*.tgz
+*.pem
+*.key
+deploy-result.json
+*.log
+.firecrawl/
+nexus-secrets.json

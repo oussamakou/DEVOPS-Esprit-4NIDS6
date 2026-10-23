@@ -1,0 +1,3 @@
+# Exact historical classroom sample: base64 "root"/"studentdb", removed from the working tree.
+# This fingerprint does not suppress new files, commits, passwords, or token rules.
+2477b2221dfc7baf0ae66c1a5fd6f9dc3a873d1f:k8s/mysql-secret.yaml:kubernetes-secret-yaml:2

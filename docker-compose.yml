@@ -1,26 +1,39 @@
 services:
   mysql:
-    image: mysql:8.0
-    container_name: studentdb
+    image: mysql:8.4
     environment:
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
       MYSQL_DATABASE: studentdb
-    ports:
-      - "3306:3306"
+      MYSQL_USER: student
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -ustudent studentdb -e "SELECT 1"']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
 
   app:
-    build: .
-    container_name: student-management
+    build:
+      context: .
+      target: local
     ports:
-      - "8089:8089"
+      - "127.0.0.1:8089:8089"
+      - "127.0.0.1:9090:9090"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/studentdb?createDatabaseIfNotExist=true
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: root
+      DB_URL: jdbc:mysql://mysql:3306/studentdb
+      DB_USERNAME: student
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   mysql_data:

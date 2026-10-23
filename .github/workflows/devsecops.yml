@@ -1,0 +1,296 @@
+name: Commit security and Azure k3s
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      cold_cache:
+        description: Disable build caches for a controlled timing comparison
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devsecops-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  precommit:
+    name: Pre-commit hooks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-security.txt
+      - run: python scripts/test-security-controls.py
+      - run: python scripts/test-azure-preflight.py
+      - run: python scripts/install-tools.py gitleaks
+      - run: pre-commit run --all-files --show-diff-on-failure
+
+  sast:
+    name: Commit SAST - Semgrep
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: pip install semgrep==1.182.1
+      - name: Verify SAST rejects the labelled command-execution fixture
+        run: |
+          set +e
+          python scripts/security-exercise.py sast
+          result=$?
+          set -e
+          test "$result" -eq 1
+      - run: semgrep scan --config .semgrep --error --strict --metrics=off --json-output=semgrep.json src/main/java
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: sast-report
+          path: |
+            semgrep.json
+            .tools/exercise
+          retention-days: 14
+
+  build:
+    name: 1 - Maven build and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: inputs.cold_cache != true
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+      - run: bash ./mvnw -B -ntp verify
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tested-jar
+          path: target/student-management-0.0.1-SNAPSHOT.jar
+          retention-days: 3
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            target/surefire-reports
+            target/site/jacoco
+          retention-days: 14
+
+  dependencies:
+    name: Commit dependencies - Trivy JAR and SBOM
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tested-jar
+          path: target
+      - run: python scripts/install-tools.py trivy
+      - name: Dependency inventory (CycloneDX SBOM)
+        run: .tools/trivy fs --scanners vuln --format cyclonedx --output sbom.cdx.json target
+      - name: Block HIGH and CRITICAL Java dependencies
+        run: .tools/trivy fs --scanners vuln --pkg-types library --severity HIGH,CRITICAL --exit-code 1 --format json --output dependencies.json target
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: dependency-report
+          path: |
+            dependencies.json
+            sbom.cdx.json
+          retention-days: 14
+
+  secrets:
+    name: 2 - Gitleaks secrets gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - run: python3 scripts/install-tools.py gitleaks
+      - run: .tools/gitleaks git . --redact --report-format json --report-path gitleaks.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: secrets-report
+          path: gitleaks.json
+          retention-days: 14
+
+  iac:
+    name: 3 - Terraform and Checkov gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/install-tools.py terraform actionlint
+      - run: |
+          .tools/actionlint
+          .tools/terraform -chdir=terraform fmt -check
+          .tools/terraform -chdir=terraform init -backend=false -input=false
+          .tools/terraform -chdir=terraform validate
+      - run: pip install --disable-pip-version-check checkov==3.3.29
+      - name: Prove the SSH rejection gate and validate supporting files
+        run: |
+          python scripts/prove-ssh-gate.py
+          python scripts/validate-project.py
+          for script in scripts/*.sh; do bash -n "$script"; done
+      - name: Check Azure identity setup without contacting Azure
+        shell: pwsh
+        run: ./scripts/test-azure-oidc.ps1
+      - run: checkov --config-file .checkov.yml -o cli -o junitxml --output-file-path console,checkov.xml
+      - name: Scan optional Azure coursework tools too
+        run: checkov --config-file .checkov.yml --var-file terraform/coursework.tfvars.example -o cli -o junitxml --output-file-path console,checkov-course.xml
+      - name: Validate Azure Compose and HTTPS proxy configuration
+        run: |
+          python scripts/validate-course-config.py
+          docker run --rm -v "$PWD/cloud/tools/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -e SONAR_DOMAIN=sonar.example.test -e NEXUS_DOMAIN=nexus.example.test \
+            caddy:2.11.7 caddy adapt --config /etc/caddy/Caddyfile --validate > /tmp/caddy-config.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: infrastructure-report
+          path: |
+            checkov.xml
+            checkov-course.xml
+          retention-days: 14
+
+  docker:
+    name: 4 - Docker build
+    needs: [build, secrets, iac, precommit, sast, dependencies]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tested-jar
+          path: target
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          target: ci
+          platforms: linux/amd64
+          tags: student-management:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          no-cache: ${{ inputs.cold_cache == true }}
+          pull: true
+      - run: sha256sum /tmp/image.tar > /tmp/image.tar.sha256
+      - name: Test the built image and manifests on ephemeral k3s
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/install-tools.py k3d
+          docker load --input /tmp/image.tar
+          bash scripts/smoke-k3s.sh "student-management:$COMMIT_SHA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: application-image
+          path: |
+            /tmp/image.tar
+            /tmp/image.tar.sha256
+          retention-days: 3
+
+  trivy:
+    name: 5 - Trivy HIGH/CRITICAL gate
+    needs: docker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: application-image
+          path: /tmp
+      - run: python3 scripts/install-tools.py trivy
+      - run: |
+          cd /tmp
+          sha256sum -c image.tar.sha256
+          cd "$GITHUB_WORKSPACE"
+          .tools/trivy image --input /tmp/image.tar --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format json --output trivy.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: vulnerability-report
+          path: trivy.json
+          retention-days: 14
+
+  deploy:
+    name: 6 - Publish scanned image and deploy
+    needs: trivy
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && vars.AZURE_DEPLOY_ENABLED == 'true'
+    environment: azure-lab
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_VM_NAME: ${{ vars.AZURE_VM_NAME }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: application-image
+          path: /tmp
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Push the exact scanned artifact
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          cd /tmp
+          sha256sum -c image.tar.sha256
+          docker load --input image.tar
+          registry=$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)
+          az acr login --name "$ACR_NAME"
+          docker tag "student-management:$COMMIT_SHA" "$registry/student-management:$COMMIT_SHA"
+          docker push "$registry/student-management:$COMMIT_SHA"
+          image=$(docker inspect --format '{{index .RepoDigests 0}}' "$registry/student-management:$COMMIT_SHA")
+          [[ "$image" == "$registry/student-management@sha256:"* ]]
+          echo "DEPLOY_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: Deploy through Azure control plane (no public Kubernetes API)
+        run: |
+          python3 scripts/make-deploy-bundle.py "$DEPLOY_IMAGE" > /tmp/deploy.sh
+          az vm run-command invoke --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_VM_NAME" --command-id RunShellScript --scripts @/tmp/deploy.sh -o json > deploy-result.json
+          python3 scripts/check-run-command.py deploy-result.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: deployment-evidence
+          path: deploy-result.json
+          retention-days: 14

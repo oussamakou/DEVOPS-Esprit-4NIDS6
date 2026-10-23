@@ -1,0 +1,327 @@
+# Azure coursework pipeline
+
+The coursework dashboard is GitHub Actions. All builds run on hosted Linux runners.
+The app, MySQL, Prometheus and Grafana run with Docker Compose on Azure, while
+SonarQube Community Build, PostgreSQL and Nexus run on a separate Azure tools VM.
+No local VM, Vagrant or working Docker Desktop is needed.
+
+## What each stage does
+
+| Stage in `coursework.yml` | Tool and result |
+| --- | --- |
+| 1. Checkout Git | Fetch the exact Git commit with history |
+| 2. Compile Maven | Compile, run tests, package the JAR, generate JaCoCo coverage |
+| Commit gates | Re-run hooks, scan Git history with Gitleaks, run Semgrep SAST and Trivy dependency scanning; create a CycloneDX SBOM |
+| 3. SonarQube | Publish analysis and wait for a blocking quality gate |
+| 4. Nexus | Upload the exact tested JAR with its POM to a hosted Maven snapshots repository |
+| 5. Build image | Build from that same JAR, then reject HIGH/CRITICAL image vulnerabilities |
+| 6. Deploy image | Publish the scanned image to Azure Container Registry and resolve its immutable digest |
+| 7. Docker Compose | Azure Run Command pulls that digest using the VM's managed identity and starts the application stack |
+| 8. Monitoring | Verify the API/database request, actual running image, Prometheus target UP and Grafana health |
+| 9. Email | Send the success/failure status and Actions URL via authenticated SMTP with STARTTLS |
+
+The numbered stages are named steps within the delivery job so they share the same
+tested artifact. Email is an independent job that can run after delivery failure.
+Email is explicitly skipped until repository variable `EMAIL_ENABLED=true` is set.
+The workflow is manually dispatched **on master**, uses the `azure-lab` environment,
+and fails on missing cloud settings; unconfigured external services never count as
+passing. Restrict environment deployment branches to master and configure approval
+protection as appropriate for the repository plan.
+
+The existing `devsecops.yml` remains the automatic push/PR security workflow with an
+optional earlier k3s deployment. Keep `AZURE_DEPLOY_ENABLED=false` for the Compose lab.
+This separates fast commit feedback from delivery that requires configured servers.
+
+## Pre-commit and commit security
+
+On Windows (Docker is not needed):
+
+```powershell
+python -m venv .tools/hooks-venv
+.tools/hooks-venv/Scripts/python.exe -m pip install -r requirements-security.txt
+python scripts/install-tools.py gitleaks
+.tools/hooks-venv/Scripts/python.exe -m pre_commit install
+.tools/hooks-venv/Scripts/python.exe -m pre_commit run --all-files
+```
+
+The hooks validate YAML/XML, reject merge markers/private-key headers, and run
+Gitleaks against the **staged** Git snapshot. Hook installation is local and must be
+repeated by every contributor. CI repeats file checks and independently scans the
+full available history, so bypassing a workstation hook does not bypass CI.
+
+Semgrep runs after a push/PR on Linux; the local rules cover selected command
+execution, concatenated SQL and TLS-verification patterns. This is deliberately
+limited SAST coverage, supplemented by SonarQube at delivery. Trivy inventories the
+packaged Java dependencies and blocks HIGH/CRITICAL vulnerabilities without an
+ignore-unfixed shortcut. Dependabot proposes weekly Maven, Actions, Python, Docker
+and Terraform updates; update PRs must still pass tests and scans.
+
+Threat modeling is a human design activity before coding. Review
+[THREAT-MODEL.md](THREAT-MODEL.md) for assets, boundaries, STRIDE scenarios and open
+risks, then update it when the architecture changes.
+
+## Prepare resources in Azure Cloud Shell
+
+### Enable persistent storage first
+
+An actual session restart during this lab displayed the ephemeral-session banner
+and removed `~/student-course`. The repository commits remain on GitHub and Azure
+provider registrations remain subscription settings, but that session's unpushed
+files and logs disappeared. No VM deployment had run at that point.
+
+Before creating Cloud Shell storage, read **Azure Policy > Assignments** at the
+**Azure for Students** subscription scope. Open **Allowed resource deployment
+regions** and inspect its **Parameters / allowedLocations** value. Choose a listed
+region for the storage account and later recheck VM quota/SKUs in that region.
+A quota listing is not proof that resource deployment is permitted by this policy.
+
+The owner confirmed these allowed regions: `spaincentral`, `denmarkeast`,
+`germanywestcentral`, `italynorth`, `polandcentral`. This lab now defaults to
+`spaincentral` (Spain Central). The subsequent Cloud Shell mount check and clone
+under `~/clouddrive/student-course` succeeded. Subscription discovery and quota
+were also checked there; actual VM allocation remains unverified.
+
+In Cloud Shell's **Create storage account** pane, select **Spain Central**, keep
+resource group `devsecops-lab`, use a globally available account name containing
+only lowercase letters/digits (for example `devsecopsouss323d` if available), and
+set the file share to `ouss`. The previously entered `devsecops-ouss` is invalid
+because it contains a hyphen. If using the Azure Storage portal instead, a
+Standard StorageV2/LRS account with an SMB file share is suitable for this setup.
+
+An actual Cloud Shell storage attempt in West Europe was rejected with
+`RequestDisallowedByAzure` and the allowed-deployment-regions policy message.
+Do not cycle through regions or remove the subscription's policy. Inspect the
+assigned region list first. If automatic Cloud Shell storage creation picks a
+blocked region, create a storage account manually in an allowed region, then use
+**Select existing storage account** in Cloud Shell and select/create its file share.
+Storage account names must be globally unique, 3-24 lowercase letters/digits;
+`devsecops-ouss` contains a disallowed hyphen, so use a valid available name instead.
+See [Azure naming rules](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftstorage).
+
+If policy details are easier to retrieve from the terminal, an ephemeral session is
+sufficient for this read-only query; it does not need the checkout or persistent state:
+
+```bash
+az policy assignment list --disable-scope-strict-match true \
+  --query '[].{Policy:displayName,Scope:scope,Parameters:parameters}' -o json
+```
+
+In Cloud Shell, open **Settings > Reset User Settings**, restart setup, select
+**Bash > Mount storage account**, choose **Azure for Students**, and create or
+select your own storage account/file share. Follow the
+[Microsoft persistent-storage setup](https://learn.microsoft.com/en-us/azure/cloud-shell/get-started/new-storage).
+The [storage-management guide](https://learn.microsoft.com/en-gb/azure/cloud-shell/persisting-shell-storage)
+explains how to switch from ephemeral mode.
+
+Keep this checkout (and its ignored Terraform state, plans and evidence logs) under
+the mounted `~/clouddrive` directory. After a fresh mount, start with the clone
+command below; on later sessions use `cd ~/clouddrive/student-course` and
+`git pull --ff-only`. Confirm storage is mounted before generating keys/state or
+applying a plan. Preserve a private backup of the SSH key as described below.
+
+The enabled Azure for Students subscription is usable, but VM family quota, regional
+availability and current student credit must be checked before applying. The tools
+VM baseline is 4 vCPU / 16 GB plus a 128 GB disk; the application uses 2 vCPU / 4 GB.
+These are billable resources. The owner applied the plan successfully: 19 added,
+0 changed, 0 destroyed in `studentcourse-rg`. Tools bootstrap reported
+`TOOLS_BOOTSTRAP_SUCCEEDED`: PostgreSQL was healthy and SonarQube/Nexus containers
+had started. Subsequent live checks confirmed SonarQube UP, valid public HTTPS
+certificates for both tools, CI authentication over HTTPS (HTTP 200), and anonymous
+requests rejected with HTTP 401. A private `student-management` project uses main
+branch `master` and a project-limited analysis token. The Nexus CI account has only
+browse/read/add/edit on `maven-snapshots`; its admin API request is denied (HTTP 403).
+Gmail STARTTLS/SMTP authentication also passed. End-to-end application delivery,
+monitoring and actual notification delivery still require the first coursework run.
+
+The historical France Central quota was 6 total regional vCPUs, 4 Standard BS
+vCPUs, 4 Standard DSv4 vCPUs and **zero Standard DSv5 vCPUs**. The subsequent Spain
+Central output listed `Standard_B2als_v2` (app: 2 vCPUs / 4 GiB) and
+`Standard_D4s_v4` (tools: 4 vCPUs / 16 GiB) as eligible. Spain Central had 0/6
+regional vCPUs, 0/10 Standard Basv2 family vCPUs and 0/4 Standard DSv4 family
+vCPUs used. These are now the defaults, consuming all 6 regional vCPUs if deployed.
+Eligibility and quota do not guarantee available capacity: the preparation script
+checks subscription SKU restrictions again before
+generating inputs. It saves the returned restrictions in ignored `.tools/azure-skus.json`.
+Optional `COURSE_LOCATION`, `COURSE_APP_SIZE` and `COURSE_TOOLS_SIZE` environment
+variables override the defaults; review that region's quota and memory needs again.
+Preparation prints seven numbered phases. Account/provider requests time out after
+120 seconds; the combined VM SKU query times out after 180 seconds. If preparation
+stops, capture its phase and error. From the existing checkout, update with
+`git pull --ff-only`, then save a rerun with `mkdir -p .tools` and
+`bash scripts/prepare-azure-course.sh YOUR_WORKSTATION_PUBLIC_IPV4/32 2>&1 | tee .tools/azure-prepare.log`.
+
+Actual subscription discovery subsequently rejected `Standard_B2s` in France Central
+with `NotAvailableForSubscription`, despite its family quota being available. The
+original B2s choice was therefore unsuitable. Spain Central discovery also rejected
+B2s but accepted the B2als_v2 replacement and the D4s_v4 tools size; the owner's
+quota output supports this pair. The subsequent apply created both VMs successfully.
+Run `bash scripts/discover-azure-sizes.sh spaincentral` to query ten candidate
+sizes together. It reports eligible and restricted sizes, their families, CPU and
+memory, without generating inputs or a plan. Select a confirmed eligible 2-vCPU
+app size with at least 4 GiB and a 4-vCPU tools size with at least 16 GiB; their
+combined regional and family usage must fit the quota table. Use the environment
+overrides above for the selected pair. ARM Bpsv2 sizes are deliberately excluded
+because the application image is built for linux/amd64.
+
+Use the coursework branch until the PR is merged:
+
+```bash
+cd "$HOME/clouddrive"
+git clone --branch codex/azure-devsecops https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6.git student-course
+cd student-course
+az account show --query '{Name:name,State:state}' -o table
+az provider register --namespace Microsoft.Compute --wait
+az provider register --namespace Microsoft.Network --wait
+az provider register --namespace Microsoft.ContainerRegistry --wait
+az vm list-usage --location spaincentral -o table
+bash scripts/prepare-azure-course.sh YOUR_WORKSTATION_PUBLIC_IPV4/32
+```
+
+Use the public IPv4 of the computer from which you will SSH, **not** Cloud Shell's
+outbound address. The script reads the signed-in subscription, creates a separate
+`coursework` Terraform workspace, generates an SSH key if needed, and saves a plan.
+Prefer setting `COURSE_PUBLIC_KEY` in Cloud Shell to your workstation's existing
+SSH **public** key before running it. If you use the generated Cloud Shell key,
+download the private key securely to your workstation using Cloud Shell's file
+download control; never paste it into chat, Git or screenshots. The /32 rule permits
+your workstation, so SSH from Cloud Shell itself is not automatically permitted.
+It does not apply the plan. Keep Terraform state and the SSH private key in persistent
+Cloud Shell storage; ephemeral Cloud Shell sessions are insufficient for recovery.
+The generated `.tfvars.json`, plans and private keys are ignored by Git.
+An empty quota table does not mean unlimited quota: this subscription initially
+reported `Microsoft.Compute` as `NotRegistered`. Register Compute first, wait for
+`Registered`, and then check the regional and VM-family quotas again. Registration
+itself does not create the application resources.
+
+After reviewing the plan and checking quota/credit:
+
+```bash
+.tools/terraform -chdir=terraform apply coursework.tfplan
+.tools/terraform -chdir=terraform output
+```
+
+Do not change an existing k3s VM's runtime in place: cloud-init changes can replace
+the VM. The coursework workspace and distinct resource prefix avoid taking over
+the earlier lab. No additional public app port is opened for Compose; use SSH.
+
+## Bootstrap the tools securely
+
+Get `tools_public_ip`, `tools_fqdn` and `public_ip` from Terraform outputs. The tools
+VM has its own Azure DNS hostname. Sonar uses HTTPS 443; Nexus uses HTTPS 8443 on
+the same hostname. Caddy obtains certificates using TLS-ALPN on port 443; public
+HTTP port 80 remains closed. No purchased domain
+is needed. Caddy's HTTPS profile is disabled during initial admin setup.
+
+Copy this checkout to the tools VM, or clone the branch there, then:
+
+```bash
+# On the tools VM after SSH (use the key created by the preparation script):
+sudo cloud-init status --wait
+sudo bash scripts/start-course-tools.sh bootstrap
+```
+
+The bootstrap generates `/opt/student-tools/nexus-secrets.json` once using 32 random
+bytes, restricts it to Nexus UID/GID 200 with mode 400, and mounts it read-only.
+It preserves the key on subsequent runs. Back up this private file with Nexus data;
+it is needed to decrypt stored secrets and must never be committed or screenshot.
+For an existing instance that previously used the built-in key, configure the
+file, restart Nexus, invoke its authenticated `PUT
+/service/rest/v1/secrets/encryption/re-encrypt` API with `secretKeyId=coursework-v1`,
+and verify task completion and the health screen. The owner lab completed this
+task successfully; the before/after screenshots are in
+[EVIDENCE-CAPTURE.md](EVIDENCE-CAPTURE.md).
+
+From your workstation, open tunnels using the tools VM IP and your private key:
+
+```bash
+ssh -i PATH_TO_PRIVATE_KEY -N -L 9000:127.0.0.1:9000 -L 8081:127.0.0.1:8081 azureuser@TOOLS_PUBLIC_IP
+```
+
+Open SonarQube on `http://localhost:9000`, change the initial admin password,
+require authentication, create the `student-management` project, configure its
+quality gate and generate a project analysis token. In Nexus on
+`http://localhost:8081`, complete onboarding, change the initial admin password,
+disable anonymous access, create a hosted `maven-snapshots` repository if absent,
+and create a deployment user restricted to this repository. Obtain Nexus's initial
+password only in your private terminal with `sudo docker compose -f
+/opt/student-tools/compose.yml exec nexus cat /nexus-data/admin.password`; never
+include that screen in evidence. Complete any version-specific onboarding prompts.
+
+After passwords and permissions are configured, on the tools VM:
+
+```bash
+sudo bash scripts/start-course-tools.sh https YOUR_TOOLS_FQDN
+```
+
+Verify both HTTPS pages and certificate validation. SonarQube on this configuration
+analyses the main branch; the Semgrep commit checks cover PRs without needing paid
+Sonar branch analysis. Back up PostgreSQL, Nexus volumes and Caddy data off the VM;
+Compose volumes survive container replacement, not VM/disk loss.
+
+## GitHub cloud identity and settings
+
+The application VM receives AcrPull automatically. On your authenticated Azure
+session, run `scripts/configure-azure-oidc.ps1` with PowerShell after applying the
+coursework workspace. It creates/reuses a user-assigned managed identity in the
+lab resource group, a GitHub environment-specific federated credential,
+registry-scoped AcrPush/Reader and VM-scoped Run Command access. It registers
+`Microsoft.ManagedIdentity` if needed, uses the lab group's policy-allowed region,
+and prints the required identifiers. The script supports Windows and Linux Cloud Shell.
+The initial app-registration approach failed with `Insufficient privileges to
+complete the operation` because the owner's tenant blocks app creation. Managed
+identity federation uses Azure resource permissions instead, without Graph calls
+or a client secret. The caller still needs permission to create the identity and
+assign roles; an Azure RBAC/policy denial must be resolved by an authorized owner.
+Existing trust is checked against the exact repository/environment before roles
+are granted. Seven offline integration scenarios run in the infrastructure CI job.
+The managed identity, federation and role setup are managed by this script outside
+Terraform state; the identity/federation live inside the lab resource group.
+Run Command is root-equivalent on that one VM; do not use subscription Contributor.
+
+Set these **environment variables** in GitHub environment `azure-lab`:
+
+| Variable | Value |
+| --- | --- |
+| AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID | OIDC script output |
+| AZURE_RESOURCE_GROUP, ACR_NAME | Terraform / OIDC script output |
+| COMPOSE_VM_NAME | Terraform vm_name output |
+| SONAR_HOST_URL | `https://YOUR_TOOLS_FQDN` |
+| SONAR_PROJECT_KEY | `student-management` |
+| NEXUS_MAVEN_URL | `https://YOUR_TOOLS_FQDN:8443/repository/maven-snapshots/` |
+| SMTP_HOST, SMTP_PORT | Provider SMTP server; STARTTLS port, normally 587 |
+| MAIL_FROM, MAIL_TO | Your verified sender and intended recipient address |
+
+Set these **environment secrets**, never paste their values into chat or Git:
+`SONAR_TOKEN`, `NEXUS_USERNAME`, `NEXUS_PASSWORD`, `SMTP_USERNAME`, `SMTP_PASSWORD`.
+
+Set repository variable `EMAIL_ENABLED=true` only after the SMTP configuration and
+recipient are ready. Keep repository variable `AZURE_DEPLOY_ENABLED=false` so the
+earlier k3s workflow cannot deploy to the Compose VM. Merge the reviewed PR before
+dispatching **Coursework - SonarQube Nexus Compose** on master.
+
+For monitoring, tunnel app VM ports 8089, 9091 and 3000 to the same local ports.
+Grafana's generated password is stored in `/opt/student-course/.env` on that VM;
+do not print it in CI or screenshots. The dashboard is provisioned automatically.
+The health check verifies live scraping; visually inspect the dashboard under API
+traffic before claiming demonstrated graphs. Pipeline email is separate from metric
+alerting: Alertmanager/email alerts from Prometheus are not configured here.
+
+## Evidence and deliberate failure exercises
+
+Use [EVIDENCE-CAPTURE.md](EVIDENCE-CAPTURE.md). Do not leave bugs or vulnerable
+dependencies in the delivery branch just to obtain a red screenshot. Existing
+historical failures are real; exercises are clearly labelled simulations.
+
+## References used for this implementation
+
+- [pre-commit installation and local hooks](https://pre-commit.com/)
+- [Semgrep in CI](https://semgrep.dev/docs/semgrep-ci/sample-ci-configs)
+- [Trivy filesystem scanning](https://trivy.dev/latest/docs/target/filesystem/)
+- [SonarQube blocking quality gate](https://docs.sonarsource.com/sonarqube-server/10.0/analyzing-source-code/ci-integration/overview)
+- [Maven deployment credentials](https://maven.apache.org/guides/mini/guide-deployment-security-settings.html)
+- [Dependabot configuration](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference)
+- [SonarQube Linux host requirements](https://docs.sonarsource.com/sonarqube-server/2026.1/server-installation/pre-installation/linux)
+- [Caddy ACME challenge configuration](https://caddyserver.com/docs/caddyfile/directives/tls)
+- [GitHub federation with a user-assigned managed identity](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust-user-assigned-managed-identity)
+- [Nexus custom encryption key configuration](https://help.sonatype.com/en/configuring-the-runtime-environment.html)
+- [Nexus secrets re-encryption](https://help.sonatype.com/en/re-encryption-in-nexus-repository.html)

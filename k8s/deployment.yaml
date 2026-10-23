@@ -2,8 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: student-app
+  namespace: student
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: student-app
@@ -12,26 +14,64 @@ spec:
       labels:
         app: student-app
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: acr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: student-app
         image: IMAGE_PLACEHOLDER
         ports:
-        - containerPort: 8089
+        - name: http
+          containerPort: 8089
+        - name: management
+          containerPort: 9090
+        resources:
+          requests: {cpu: 100m, memory: 256Mi}
+          limits: {cpu: '1', memory: 512Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        volumeMounts:
+          - name: tmp
+            mountPath: /tmp
+        startupProbe:
+          httpGet: {path: /actuator/health/liveness, port: management}
+          periodSeconds: 5
+          failureThreshold: 60
+        readinessProbe:
+          httpGet: {path: /actuator/health/readiness, port: management}
+          periodSeconds: 5
+        livenessProbe:
+          httpGet: {path: /actuator/health/liveness, port: management}
+          periodSeconds: 15
         env:
-        - name: SPRING_DATASOURCE_URL
-          value: jdbc:mysql://mysql:3306/studentdb?createDatabaseIfNotExist=true
-        - name: SPRING_DATASOURCE_USERNAME
-          value: root
-        - name: SPRING_DATASOURCE_PASSWORD
+        - name: DB_URL
+          value: jdbc:mysql://mysql:3306/studentdb
+        - name: DB_USERNAME
+          value: student
+        - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: mysql-secret
-              key: mysql-root-password
+              key: mysql-password
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 128Mi}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: student-service
+  namespace: student
 spec:
   type: NodePort
   selector:
