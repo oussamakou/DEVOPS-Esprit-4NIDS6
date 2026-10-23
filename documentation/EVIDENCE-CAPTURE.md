@@ -1,5 +1,18 @@
 # Capture real failures and their fixes
 
+## First full delivery startup failure
+
+The [Compose startup case study](COMPOSE-STARTUP-CASE-STUDY.md) preserves the actual
+red stage 7, the missing localhost port mapping and the monitoring configuration
+permission errors. It records the repair and the independent live VM verification.
+
+## First live SonarQube findings
+
+The [first baseline analysis](SONAR-FIRST-BASELINE.md) reported six HIGH
+entity-binding findings and five MEDIUM reliability impacts. Its default new-code
+gate passed the first baseline with no evaluated conditions. The screenshots show
+both facts honestly; no issue was suppressed and no defect was injected.
+
 ## Actual Nexus default secret-encryption key finding
 
 After tools onboarding, Nexus's status screen reported an unhealthy check:

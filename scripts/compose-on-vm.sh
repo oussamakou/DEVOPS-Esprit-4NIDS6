@@ -18,7 +18,11 @@ if [[ "$mode" == deploy ]]; then
     exit 1
   fi
   mkdir -p "$destination"
-  cp "$bundle"/runtime/* "$destination/"
+  # These tracked configurations contain no secrets. Non-root container users
+  # must be able to read the bind mounts, even under our private umask.
+  for config in "$bundle"/runtime/*; do
+    install -m 644 "$config" "$destination/"
+  done
   if [[ ! -f "$destination/.env" ]]; then
     printf 'MYSQL_ROOT_PASSWORD=%s\nDB_PASSWORD=%s\nGRAFANA_PASSWORD=%s\n' \
       "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" > "$destination/.env"
@@ -55,7 +59,14 @@ for attempt in $(seq 1 60); do
   fi
   sleep 3
 done
-"$ready"
+if [[ "$ready" != true ]]; then
+  echo 'API_READINESS_FAILED: localhost:8089 did not return a database-backed JSON array.' >&2
+  docker compose ps -a >&2
+  # Print state and port mappings only: never dump container environment secrets.
+  docker inspect --format 'status={{.State.Status}} oom={{.State.OOMKilled}} ports={{json .NetworkSettings.Ports}}' \
+    "$(docker compose ps -a -q app)" >&2
+  exit 1
+fi
 container=$(docker compose ps -q app)
 [[ -n "$container" ]]
 [[ "$(docker inspect --format '{{.Config.Image}}' "$container")" == "$image" ]]
@@ -70,7 +81,11 @@ if [[ "$mode" == monitor ]]; then
     fi
     sleep 3
   done
-  "$healthy"
+  if [[ "$healthy" != true ]]; then
+    echo 'MONITORING_FAILED: Prometheus student-api target or Grafana database is not healthy.' >&2
+    docker compose ps -a >&2
+    exit 1
+  fi
   echo 'MONITORING_VERIFIED: Prometheus student-api UP and Grafana database ok'
 fi
 # The caller checks this marker; Azure request success alone is insufficient.

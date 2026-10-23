@@ -23,7 +23,7 @@ services:
       DB_USERNAME: student
       DB_PASSWORD: ${DB_PASSWORD:?Create the private runtime .env}
     ports: ['127.0.0.1:8089:8089']
-    networks: [database, metrics]
+    networks: [database, metrics, host_access]
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
@@ -40,7 +40,7 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     ports: ['127.0.0.1:9091:9090']
-    networks: [metrics]
+    networks: [metrics, host_access]
     mem_limit: 384m
     restart: unless-stopped
   grafana:
@@ -54,10 +54,14 @@ services:
       - ./dashboards.yml:/etc/grafana/provisioning/dashboards/student.yml:ro
       - ./student.json:/var/lib/grafana/dashboards/student.json:ro
     ports: ['127.0.0.1:3000:3000']
-    networks: [metrics]
+    networks: [metrics, host_access]
     mem_limit: 384m
     restart: unless-stopped
 networks:
+  # Docker needs a non-internal bridge to install localhost port mappings.
+  # Only these three services join it; MySQL stays on the internal database net.
+  host_access:
+    driver: bridge
   database:
     internal: true
   metrics:
