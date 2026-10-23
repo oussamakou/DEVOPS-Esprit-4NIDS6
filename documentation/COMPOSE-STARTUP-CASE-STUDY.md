@@ -54,3 +54,17 @@ published MySQL service. These checks supplement the actual Azure readiness test
 Docker documents the network behavior in
 [Networking in Compose](https://docs.docker.com/compose/how-tos/networking/)
 and [port publishing](https://docs.docker.com/engine/network/port-publishing/).
+
+## Separate CI image-import failure during repair validation
+
+[Repair validation run 39884680576](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/39884680576)
+passed the source, dependency and infrastructure checks, then failed its disposable
+k3s integration test. The importer printed success, but the pod could not find the
+locally built image and fell back to Docker Hub, producing `ImagePullBackOff` and
+`pull access denied`. This did not affect the running Azure Compose application.
+
+The test now imports the exact build archive directly into the node's containerd
+and checks the CRI image ID against Docker's build ID before creating workloads.
+Only the disposable CI manifest uses `imagePullPolicy: Never`, so a missing local
+artifact fails instead of falling back to an unrelated registry. Production
+manifests and Azure ACR authentication retain their existing behavior.

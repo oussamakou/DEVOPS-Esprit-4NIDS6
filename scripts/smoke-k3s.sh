@@ -27,7 +27,12 @@ trap cleanup EXIT
 .tools/k3d cluster create student-ci --image rancher/k3s:v1.37.1-k3s1 \
   --port '127.0.0.1:30089:30089@server:0' --wait --timeout 180s \
   --k3s-arg '--disable=traefik@server:*' --k3s-arg '--disable=servicelb@server:*'
-.tools/k3d image import "$image" --cluster student-ci
+# Import the exact build archive directly and verify what the CRI can see.
+# k3d's tools-node importer reported success while leaving this image absent.
+docker exec -i k3d-student-ci-server-0 k3s ctr --namespace k8s.io images import - < /tmp/image.tar
+expected_id=$(docker image inspect --format '{{.Id}}' "$image")
+docker exec k3d-student-ci-server-0 k3s crictl inspecti "$image" \
+  | jq -e --arg expected "$expected_id" '.status.id == $expected'
 # Use the explicit context; do not let subsequent commands select a user's cluster.
 export KUBECONFIG="$work/kubeconfig"
 .tools/k3d kubeconfig get student-ci > "$KUBECONFIG"
@@ -39,7 +44,8 @@ kubectl -n student create secret generic grafana-admin --from-env-file="$work/gr
 printf '{"auths":{}}' > "$work/dockerconfig.json"
 kubectl -n student create secret generic acr-pull --type=kubernetes.io/dockerconfigjson --from-file=.dockerconfigjson="$work/dockerconfig.json"
 kubectl apply -f k8s/mysql-deployment.yaml -f k8s/network-policy.yaml -f k8s/egress-policy.yaml
-sed "s|IMAGE_PLACEHOLDER|$image|g" k8s/deployment.yaml | kubectl apply -f -
+# CI must use the imported artifact, never fall back to a remote image pull.
+sed "s|image: IMAGE_PLACEHOLDER|image: $image\\n        imagePullPolicy: Never|" k8s/deployment.yaml | kubectl apply -f -
 kubectl -n student rollout status deployment/mysql --timeout=300s
 kubectl -n student rollout status deployment/student-app --timeout=300s
 curl --fail --silent --show-error -H 'Content-Type: application/json' \
