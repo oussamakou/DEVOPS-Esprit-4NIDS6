@@ -13,6 +13,16 @@ if [[ ! -f "$destination/.env" ]]; then
   printf 'SONAR_DB_PASSWORD=%s\n' "$(openssl rand -hex 32)" > "$destination/.env"
 fi
 chmod 600 "$destination/.env"
+# Nexus reports an unhealthy security check when its built-in encryption key is used.
+# Generate once on the host; preserve this file with the Nexus data backups.
+if [[ ! -e "$destination/nexus-secrets.json" ]]; then
+  printf '{"active":"coursework-v1","keys":[{"id":"coursework-v1","key":"%s"}]}\n' \
+    "$(openssl rand -base64 32)" > "$destination/nexus-secrets.json"
+fi
+jq -e '.keys | type == "array" and length > 0' "$destination/nexus-secrets.json" > /dev/null
+# The official Nexus container runs as UID/GID 200.
+chown 200:200 "$destination/nexus-secrets.json"
+chmod 400 "$destination/nexus-secrets.json"
 cd "$destination"
 if [[ "$mode" == bootstrap ]]; then
   docker compose up -d postgres sonarqube nexus

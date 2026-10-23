@@ -38,7 +38,11 @@ services:
     restart: unless-stopped
   nexus:
     image: sonatype/nexus3:3.97.1
-    volumes: [nexus_data:/nexus-data]
+    environment:
+      NEXUS_SECRETS_KEY_FILE: /run/secrets/nexus-secrets.json
+    volumes:
+      - nexus_data:/nexus-data
+      - ./nexus-secrets.json:/run/secrets/nexus-secrets.json:ro
     ports: ['127.0.0.1:8081:8081']
     mem_limit: 4g
     restart: unless-stopped

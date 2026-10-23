@@ -1,5 +1,43 @@
 # Capture real failures and their fixes
 
+## Actual Nexus default secret-encryption key finding
+
+After tools onboarding, Nexus's status screen reported an unhealthy check:
+
+```text
+Nexus was not configured with an encryption key and is using the Default key.
+```
+
+This is a genuine deployed service-configuration finding, separate from application
+code vulnerabilities and the labelled negative fixtures. The original bootstrap
+had changed admin passwords but had not configured a private encryption key.
+
+![Before: Nexus reports the default encryption key](screenshots/nexus_default_encryption_key_before.png)
+
+The remediation generates a private 32-byte key once on the tools host, exposes
+its JSON configuration to Nexus through a read-only bind mount and
+`NEXUS_SECRETS_KEY_FILE`, and preserves the key across bootstrap reruns. Its mode is
+400 with Nexus UID/GID 200 ownership. The authenticated secrets re-encryption API
+accepted the request (HTTP 202); the task log reported `RUNNING -> OK`.
+An immediate-completion task disappeared from the task-list API, so that polling
+result alone was not treated as successful completion. The task log and live health
+screen confirmed the result. No key value appears in the screenshots or Git.
+
+![After: Nexus uses the private coursework-v1 key](screenshots/nexus_private_encryption_key_after.png)
+
+A live bootstrap rerun preserved the key's checksum. Both public HTTPS endpoints
+still accepted their limited CI credentials, while anonymous requests were rejected
+with HTTP 401. Keep a private backup of the key together with Nexus data backups.
+See [Sonatype's re-encryption guide](https://help.sonatype.com/en/re-encryption-in-nexus-repository.html).
+
+## Service setup verification before the first delivery
+
+![Private SonarQube project ready for its first analysis](screenshots/sonarqube_private_project_ready.png)
+
+The project exists, its main branch is `master`, and a project-limited CI analysis
+token has been validated. The screenshot correctly shows that the main branch has
+not yet been analyzed. It is setup evidence, not a passing quality gate or deployment.
+
 ## Actual Azure directory-permission failure
 
 After the 19-resource apply and successful tools-container bootstrap, the original

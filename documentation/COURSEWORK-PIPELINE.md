@@ -125,8 +125,13 @@ VM baseline is 4 vCPU / 16 GB plus a 128 GB disk; the application uses 2 vCPU / 
 These are billable resources. The owner applied the plan successfully: 19 added,
 0 changed, 0 destroyed in `studentcourse-rg`. Tools bootstrap reported
 `TOOLS_BOOTSTRAP_SUCCEEDED`: PostgreSQL was healthy and SonarQube/Nexus containers
-had started. Service readiness, authenticated HTTPS, application delivery and email
-still require verification.
+had started. Subsequent live checks confirmed SonarQube UP, valid public HTTPS
+certificates for both tools, CI authentication over HTTPS (HTTP 200), and anonymous
+requests rejected with HTTP 401. A private `student-management` project uses main
+branch `master` and a project-limited analysis token. The Nexus CI account has only
+browse/read/add/edit on `maven-snapshots`; its admin API request is denied (HTTP 403).
+Gmail STARTTLS/SMTP authentication also passed. End-to-end application delivery,
+monitoring and actual notification delivery still require the first coursework run.
 
 The historical France Central quota was 6 total regional vCPUs, 4 Standard BS
 vCPUs, 4 Standard DSv4 vCPUs and **zero Standard DSv5 vCPUs**. The subsequent Spain
@@ -214,6 +219,17 @@ Copy this checkout to the tools VM, or clone the branch there, then:
 sudo cloud-init status --wait
 sudo bash scripts/start-course-tools.sh bootstrap
 ```
+
+The bootstrap generates `/opt/student-tools/nexus-secrets.json` once using 32 random
+bytes, restricts it to Nexus UID/GID 200 with mode 400, and mounts it read-only.
+It preserves the key on subsequent runs. Back up this private file with Nexus data;
+it is needed to decrypt stored secrets and must never be committed or screenshot.
+For an existing instance that previously used the built-in key, configure the
+file, restart Nexus, invoke its authenticated `PUT
+/service/rest/v1/secrets/encryption/re-encrypt` API with `secretKeyId=coursework-v1`,
+and verify task completion and the health screen. The owner lab completed this
+task successfully; the before/after screenshots are in
+[EVIDENCE-CAPTURE.md](EVIDENCE-CAPTURE.md).
 
 From your workstation, open tunnels using the tools VM IP and your private key:
 
@@ -307,3 +323,5 @@ historical failures are real; exercises are clearly labelled simulations.
 - [SonarQube Linux host requirements](https://docs.sonarsource.com/sonarqube-server/2026.1/server-installation/pre-installation/linux)
 - [Caddy ACME challenge configuration](https://caddyserver.com/docs/caddyfile/directives/tls)
 - [GitHub federation with a user-assigned managed identity](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust-user-assigned-managed-identity)
+- [Nexus custom encryption key configuration](https://help.sonatype.com/en/configuring-the-runtime-environment.html)
+- [Nexus secrets re-encryption](https://help.sonatype.com/en/re-encryption-in-nexus-repository.html)

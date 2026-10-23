@@ -56,3 +56,4 @@ evidence/*.csv
 deploy-result.json
 *.log
 .firecrawl/
+nexus-secrets.json
