@@ -3,7 +3,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 4.0"
+      version = "~> 5.10"
     }
   }
   # Local state for the first solo lab. See documentation/AZURE-SETUP.md before CI apply.
