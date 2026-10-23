@@ -29,9 +29,9 @@ trap cleanup EXIT
   --k3s-arg '--disable=traefik@server:*' --k3s-arg '--disable=servicelb@server:*'
 # Import the exact build archive directly and verify what the CRI can see.
 # k3d's tools-node importer reported success while leaving this image absent.
-docker exec -i k3d-student-ci-server-0 k3s ctr --namespace k8s.io images import - < /tmp/image.tar
+docker exec -i k3d-student-ci-server-0 ctr --namespace k8s.io images import - < /tmp/image.tar
 expected_id=$(docker image inspect --format '{{.Id}}' "$image")
-docker exec k3d-student-ci-server-0 k3s crictl inspecti "$image" \
+docker exec k3d-student-ci-server-0 crictl inspecti "$image" \
   | jq -e --arg expected "$expected_id" '.status.id == $expected'
 # Use the explicit context; do not let subsequent commands select a user's cluster.
 export KUBECONFIG="$work/kubeconfig"

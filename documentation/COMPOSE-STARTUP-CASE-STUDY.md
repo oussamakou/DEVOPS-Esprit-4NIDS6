@@ -62,6 +62,9 @@ passed the source, dependency and infrastructure checks, then failed its disposa
 k3s integration test. The importer printed success, but the pod could not find the
 locally built image and fell back to Docker Hub, producing `ImagePullBackOff` and
 `pull access denied`. This did not affect the running Azure Compose application.
+The next validation failed fast at the direct import with `No help topic for
+'ctr'`. A check of the same official K3s image reproduced that error for `k3s ctr`,
+while its bundled `/bin/ctr` entry point worked. The test uses that entry point.
 
 The test now imports the exact build archive directly into the node's containerd
 and checks the CRI image ID against Docker's build ID before creating workloads.
