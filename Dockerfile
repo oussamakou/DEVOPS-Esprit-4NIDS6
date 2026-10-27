@@ -7,7 +7,7 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp dependency:go-offline
 COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp package -DskipTests
 
-FROM eclipse-temurin:17-jre-alpine AS runtime
+FROM eclipse-temurin:25-jre-alpine AS runtime
 RUN apk upgrade --no-cache && addgroup -g 10001 app && adduser -D -u 10001 -G app app
 WORKDIR /app
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"
