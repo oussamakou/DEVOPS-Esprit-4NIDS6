@@ -10,7 +10,11 @@ defaults:
   run:
     shell: bash
 jobs:
+  security:
+    name: Security before Maven
+    uses: ./.github/workflows/prebuild-security.yml
   delivery:
+    needs: security
     name: Cloud delivery stages
     if: github.ref == 'refs/heads/master'
     environment: azure-lab
@@ -43,17 +47,8 @@ jobs:
           python-version: '3.12'
       - name: 2 - Compile Maven and run tests
         run: bash ./mvnw -B -ntp verify
-      - name: Commit gates - hooks, secrets, SAST, dependencies
-        run: |
-          pip install -r requirements-security.txt semgrep==1.182.1
-          python scripts/test-security-controls.py
-          python scripts/test-azure-preflight.py
-          python scripts/install-tools.py gitleaks trivy
-          pre-commit run --all-files --show-diff-on-failure
-          .tools/gitleaks git . --redact --report-format json --report-path gitleaks.json
-          semgrep scan --config .semgrep --error --strict --metrics=off --json-output=semgrep.json src/main/java
-          .tools/trivy fs --scanners vuln --format cyclonedx --output sbom.cdx.json target
-          .tools/trivy fs --scanners vuln --pkg-types library --severity HIGH,CRITICAL --exit-code 1 --format json --output dependencies.json target
+      - name: Install image scanner after the pre-build security gates
+        run: python scripts/install-tools.py trivy
       - name: Check cloud configuration (missing setup must fail clearly)
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -126,18 +121,14 @@ jobs:
             target/surefire-reports
             target/site/jacoco
             .scannerwork/report-task.txt
-            gitleaks.json
-            semgrep.json
-            dependencies.json
-            sbom.cdx.json
             trivy.json
             compose-result.json
             monitoring-result.json
           retention-days: 14
   email:
     name: 9 - Email notification
-    needs: delivery
-    if: always() && needs.delivery.result != 'skipped' && vars.EMAIL_ENABLED == 'true'
+    needs: [security, delivery]
+    if: always() && github.ref == 'refs/heads/master' && vars.EMAIL_ENABLED == 'true'
     environment: azure-lab
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -152,5 +143,5 @@ jobs:
           MAIL_FROM: ${{ vars.MAIL_FROM }}
           MAIL_TO: ${{ vars.MAIL_TO }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          RUN_RESULT: ${{ needs.delivery.result }}
+          RUN_RESULT: ${{ needs.security.result == 'success' && needs.delivery.result || needs.security.result }}
         run: python scripts/notify-pipeline.py
