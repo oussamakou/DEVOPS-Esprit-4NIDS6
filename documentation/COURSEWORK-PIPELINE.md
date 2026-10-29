@@ -10,8 +10,8 @@ No local VM, Vagrant or working Docker Desktop is needed.
 | Stage in `coursework.yml` | Tool and result |
 | --- | --- |
 | 1. Checkout Git | Fetch the exact Git commit with history |
+| Security before Maven (required prerequisite job) | Replay hooks, preserve the STRIDE document, run Gitleaks, Semgrep, Checkov and Trivy on the source POM, and collect reports before compilation |
 | 2. Compile Maven | Compile, run tests, package the JAR, generate JaCoCo coverage |
-| Commit gates | Re-run hooks, scan Git history with Gitleaks, run Semgrep SAST and Trivy dependency scanning; create a CycloneDX SBOM |
 | 3. SonarQube | Publish analysis and wait for a blocking quality gate |
 | 4. Nexus | Upload the exact tested JAR with its POM to a hosted Maven snapshots repository |
 | 5. Build image | Build from that same JAR, then reject HIGH/CRITICAL image vulnerabilities |
@@ -32,6 +32,18 @@ The existing `devsecops.yml` remains the automatic push/PR security workflow wit
 optional earlier k3s deployment. Keep `AZURE_DEPLOY_ENABLED=false` for the Compose lab.
 This separates fast commit feedback from delivery that requires configured servers.
 
+Both workflows call `prebuild-security.yml` and make the Maven job depend on its
+success. Its graph is hooks first, then SAST/secrets/IaC/source-dependency checks,
+then report collection. Maven compilation cannot start if a required check fails.
+In the coursework run the security job checks out source before the numbered
+delivery checkout; each runner needs its own checkout of the same revision.
+
+Download the **professor-security-reports** artifact and open `index.html` for the
+readable report. It links original hook logs, Semgrep/Gitleaks JSON, Checkov
+JSON/JUnit/logs, the source POM, dependency JSON, CycloneDX SBOM and the threat model.
+Security artifacts are retained for 30 days. Threat modeling remains human review,
+not a vulnerability scanner whose correctness a green job can prove.
+
 ## Pre-commit and commit security
 
 On Windows (Docker is not needed):
@@ -51,14 +63,24 @@ full available history, so bypassing a workstation hook does not bypass CI.
 
 Semgrep runs after a push/PR on Linux; the local rules cover selected command
 execution, concatenated SQL and TLS-verification patterns. This is deliberately
-limited SAST coverage, supplemented by SonarQube at delivery. Trivy inventories the
-packaged Java dependencies and blocks HIGH/CRITICAL vulnerabilities without an
-ignore-unfixed shortcut. Dependabot proposes weekly Maven, Actions, Python, Docker
+limited SAST coverage, supplemented by SonarQube at delivery. Trivy analyzes the
+source `pom.xml`, including resolved transitive dependencies, before any Maven
+compilation. It blocks HIGH/CRITICAL vulnerabilities without an ignore-unfixed
+shortcut. The report validator rejects empty inventories, unresolved versions and
+missing expected runtime packages. Trivy converts that analyzed package list into
+a CycloneDX SBOM and the validator checks that it retains those packages. The
+POM analyzer excludes test/optional dependencies; the later full-image scan checks
+the packaged Java libraries and OS packages. Dependabot proposes weekly Maven, Actions, Python, Docker
 and Terraform updates; update PRs must still pass tests and scans.
 
 Threat modeling is a human design activity before coding. Review
 [THREAT-MODEL.md](THREAT-MODEL.md) for assets, boundaries, STRIDE scenarios and open
 risks, then update it when the architecture changes.
+
+The 23 October workflow's earlier `trivy fs target` artifact had no analyzed
+packages and an empty SBOM. Its green exit was not adequate dependency evidence.
+The source-POM scan and inventory rejection checks correct that issue. Preserve
+the old report as historical evidence rather than overwriting it with a new scan.
 
 ## Prepare resources in Azure Cloud Shell
 
