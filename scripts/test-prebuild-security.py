@@ -24,7 +24,10 @@ class SecurityEvidenceTests(unittest.TestCase):
         security = yaml.safe_load((ROOT / ".github/workflows/prebuild-security.yml").read_text())
         for gate in ("sast", "secrets", "dependencies", "iac"):
             self.assertEqual(security["jobs"][gate]["needs"], "precommit")
-        self.assertNotIn("mvnw", (ROOT / ".github/workflows/prebuild-security.yml").read_text())
+        source = (ROOT / ".github/workflows/prebuild-security.yml").read_text()
+        self.assertIn("dependency:resolve", source)
+        for forbidden in ("mvnw -B -ntp verify", "mvnw -B -ntp compile", "mvnw -B -ntp package"):
+            self.assertNotIn(forbidden, source)
 
     def test_empty_or_partial_inventory_is_rejected(self):
         for report in ({}, {"Results": []}, {"Results": [{"Type": "pom", "Packages": [{"Name": "unrelated", "Version": "1"}]}]}):

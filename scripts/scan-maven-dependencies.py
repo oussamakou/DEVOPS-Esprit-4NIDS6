@@ -34,9 +34,12 @@ def main():
     (output / "pom.xml").write_bytes(source)
     with tempfile.TemporaryDirectory(prefix="course-pom-") as folder:
         (Path(folder) / "pom.xml").write_bytes(source)
-        result = subprocess.run([str(scanner), "fs", "--scanners", "vuln", "--pkg-types", "library",
+        command = [str(scanner), "fs", "--scanners", "vuln", "--pkg-types", "library",
                                  "--list-all-pkgs", "--severity", "HIGH,CRITICAL", "--exit-code", "1",
-                                 "--no-progress", "--format", "json", "--output", str(report), folder])
+                                 "--no-progress", "--format", "json", "--output", str(report)]
+        if "--offline" in sys.argv[2:]:
+            command.append("--offline-scan")
+        result = subprocess.run(command + [folder])
     if result.returncode not in (0, 1) or not report.is_file():
         raise SystemExit("Trivy did not produce a valid dependency scan")
     data = json.loads(report.read_text(encoding="utf-8"))

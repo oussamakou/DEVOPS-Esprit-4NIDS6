@@ -9,6 +9,9 @@ same reusable pre-build security workflow.
 1. Checkout source and replay installed pre-commit hook checks.
 2. In parallel, run Semgrep, full-history Gitleaks, Terraform/Checkov and source-POM
    dependency analysis. Each waits for the hook job to pass.
+   The dependency job first runs `dependency:resolve` to populate Maven's metadata
+   cache, without compilation/tests/packaging, then scans the source POM using that
+   local metadata. It asserts that no application classes or JAR were built.
 3. Collect the actual scanner reports and a readable index.
 4. Only after the reusable security workflow succeeds, start Maven compilation,
    tests and packaging. Later delivery stages retain their existing order.
