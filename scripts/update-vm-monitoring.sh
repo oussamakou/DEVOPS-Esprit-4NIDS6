@@ -23,7 +23,7 @@ for config in compose.yml prometheus.yml vms.json; do
 done
 install -m 644 "$root/cloud/runtime/compose.yml" "$destination/compose.yml"
 install -m 644 "$root/cloud/runtime/prometheus.yml" "$destination/prometheus.yml"
-install -m 644 "$root/monitoring/node-dashboard.json" "$destination/vms.json"
+install -m 644 "$root/cloud/runtime/vms.json" "$destination/vms.json"
 cd "$destination"
 docker compose up -d --no-deps --force-recreate prometheus grafana
 echo 'MONITORING_CONFIG_APPLIED: application and database containers preserved.'

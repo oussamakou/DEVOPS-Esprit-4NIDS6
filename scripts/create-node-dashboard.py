@@ -27,5 +27,5 @@ dashboard = {
     "version": 1, "refresh": "10s", "time": {"from": "now-15m", "to": "now"},
     "tags": ["azure", "node-exporter", "host-monitoring"], "panels": panels,
 }
-(Path(__file__).resolve().parents[1] / "monitoring/node-dashboard.json").write_text(
+(Path(__file__).resolve().parents[1] / "cloud/runtime/vms.json").write_text(
     json.dumps(dashboard, indent=2) + "\n", encoding="utf-8")
