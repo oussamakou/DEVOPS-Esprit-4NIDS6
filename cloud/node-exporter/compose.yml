@@ -1,0 +1,35 @@
+name: student-node-exporter
+services:
+  node-exporter:
+    # Official upstream development build (2026-10-24), pinned after Trivy scan.
+    # v1.12.1 was rejected: 15 HIGH findings. See MONITORING-DEMO.md.
+    image: prom/node-exporter@sha256:60717af57d790f02db92fdaad1175c86820e5e44ad4e35bfce543fd125b0da43
+    # Host namespaces and read-only mounts report the VM, rather than the container.
+    network_mode: host
+    pid: host
+    user: '65534:65534'
+    command:
+      - --web.listen-address=${NODE_EXPORTER_PRIVATE_IP:?Set the VM private IPv4}:9100
+      - --path.rootfs=/host
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.meminfo
+      - --collector.filesystem
+      - --collector.diskstats
+      - --collector.netdev
+      - --collector.uname
+      - --collector.time
+      - --collector.loadavg
+      - --collector.stat
+      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|var/lib/docker/.+)($$|/)'
+    volumes:
+      - /:/host:ro,rslave
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    restart: unless-stopped

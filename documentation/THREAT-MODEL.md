@@ -11,6 +11,11 @@ Developer -> Git staged snapshot -> GitHub repository -> hosted Actions runner
 -> SonarQube / Nexus over HTTPS -> scanned image -> Azure Container Registry
 -> Azure VM managed identity -> Docker Compose app -> private MySQL network.
 Prometheus scrapes the private management port; Grafana reads Prometheus.
+Prometheus also scrapes Node Exporter on the private IP of each Azure VM at
+port 9100. Exporters use host network/PID namespaces and read-only host mounts
+to collect operating-system metrics. Their own Compose projects are separate
+from the application and tools projects. Host telemetry stays inside the VNet;
+the owner views it through the existing Grafana SSH tunnel.
 The app, Prometheus and Grafana also join a host-access bridge for Docker's
 localhost-only port publishing; this permits outbound traffic. MySQL joins only
 the internal database network. Application/monitoring UIs require the SSH tunnel.
@@ -32,6 +37,7 @@ The k3s workflow remains an independent earlier deployment option.
 | Supply chain | A vulnerable dependency reaches the JAR/image | Trivy JAR and image gates; Dependabot update PRs; pinned actions | Review transitive versions, new CVEs and supporting service images |
 | Secrets / infrastructure | Build identity compromises the subscription | OIDC, registry-scoped push/read, VM-scoped Run Command; VM AcrPull | Run Command is root-equivalent on that VM |
 | Persistence | VM/disk loss destroys Nexus or student data | Persistent Compose volumes and backup/restore procedure | A volume is not an off-VM backup; restore drill remains required |
+| Host telemetry / privilege | An exposed or compromised exporter reveals VM details or accesses host files | Bind to private IP only; no Internet NSG rule; read-only rootfs/host mounts; non-root UID; drop all capabilities; only needed collectors; resource limits | Host namespaces and mounts are a deliberate monitoring trust boundary; VNet peers can read unauthenticated metrics; no host-level alert rules yet |
 
 ## Review checklist
 

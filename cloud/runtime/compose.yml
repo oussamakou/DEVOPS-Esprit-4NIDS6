@@ -38,6 +38,7 @@ services:
     command: [--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.retention.time=24h, --storage.tsdb.retention.size=256MB]
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./node-targets:/etc/prometheus/nodes:ro
       - prometheus_data:/prometheus
     ports: ['127.0.0.1:9091:9090']
     networks: [metrics, host_access]
@@ -53,6 +54,7 @@ services:
       - ./datasources.yml:/etc/grafana/provisioning/datasources/student.yml:ro
       - ./dashboards.yml:/etc/grafana/provisioning/dashboards/student.yml:ro
       - ./student.json:/var/lib/grafana/dashboards/student.json:ro
+      - ./vms.json:/var/lib/grafana/dashboards/vms.json:ro
     ports: ['127.0.0.1:3000:3000']
     networks: [metrics, host_access]
     mem_limit: 384m

@@ -18,6 +18,8 @@ if [[ "$mode" == deploy ]]; then
     exit 1
   fi
   mkdir -p "$destination"
+  # Separate exporter setup owns this discovery directory; deployments preserve it.
+  install -d -m 755 "$destination/node-targets"
   # These tracked configurations contain no secrets. Non-root container users
   # must be able to read the bind mounts, even under our private umask.
   for config in "$bundle"/runtime/*; do
@@ -71,10 +73,16 @@ container=$(docker compose ps -q app)
 [[ -n "$container" ]]
 [[ "$(docker inspect --format '{{.Config.Image}}' "$container")" == "$image" ]]
 if [[ "$mode" == monitor ]]; then
+  shopt -s nullglob
+  node_files=("$destination"/node-targets/*.json)
+  expected_nodes=0
+  if [[ ${#node_files[@]} -gt 0 ]]; then
+    expected_nodes=$(jq -se '[.[][] | .targets[]] | length' "${node_files[@]}")
+  fi
   healthy=false
   for attempt in $(seq 1 40); do
     if curl --fail --silent --max-time 5 http://127.0.0.1:9091/api/v1/targets \
-      | jq -e 'any(.data.activeTargets[]; .labels.job == "student-api" and .health == "up")' > /dev/null \
+      | jq -e --argjson expected "$expected_nodes" '.data.activeTargets | any(.[]; .labels.job == "student-api" and .health == "up") and ([.[] | select(.labels.job == "azure-nodes")] | length) == $expected and all(.[]; .labels.job != "azure-nodes" or .health == "up")' > /dev/null \
       && curl --fail --silent --max-time 5 http://127.0.0.1:3000/api/health | jq -e '.database == "ok"' > /dev/null; then
       healthy=true
       break
@@ -82,11 +90,11 @@ if [[ "$mode" == monitor ]]; then
     sleep 3
   done
   if [[ "$healthy" != true ]]; then
-    echo 'MONITORING_FAILED: Prometheus student-api target or Grafana database is not healthy.' >&2
+    echo 'MONITORING_FAILED: API/node scrape target or Grafana database is not healthy.' >&2
     docker compose ps -a >&2
     exit 1
   fi
-  echo 'MONITORING_VERIFIED: Prometheus student-api UP and Grafana database ok'
+  echo 'MONITORING_VERIFIED: API and configured node targets UP; Grafana database ok'
 fi
 # The caller checks this marker; Azure request success alone is insufficient.
 echo "DEPLOY_SUCCEEDED compose-$mode $image"

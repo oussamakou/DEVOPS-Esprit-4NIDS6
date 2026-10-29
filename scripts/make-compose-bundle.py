@@ -13,6 +13,7 @@ mode, image = sys.argv[1:]
 if mode not in ("deploy", "monitor") or not re.fullmatch(r"[a-z0-9]+\.azurecr\.io/student-management@sha256:[a-f0-9]{64}", image):
     raise SystemExit("Expected deploy/monitor and an immutable ACR digest")
 files = {f"runtime/{p.name}": p.read_bytes() for p in (root / "cloud/runtime").glob("*.yml")}
+files["runtime/vms.json"] = (root / "monitoring/node-dashboard.json").read_bytes()
 dashboard = next(yaml.safe_load_all((root / "monitoring/dashboard.yaml").read_text(encoding="utf-8")))
 files["runtime/student.json"] = dashboard["data"]["student.json"].encode()
 files["compose-on-vm.sh"] = (root / "scripts/compose-on-vm.sh").read_bytes().replace(b"\r\n", b"\n")
