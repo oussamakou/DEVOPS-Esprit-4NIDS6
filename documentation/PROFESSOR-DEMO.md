@@ -11,6 +11,14 @@ has completed, treat the parts marked *new* below as unverified in Azure.
 | Any branch or pull request | `devsecops.yml` | Pre-commit replay, Semgrep, Gitleaks, Checkov, Trivy on the POM, Maven + tests + JaCoCo, image build, k3d smoke test, Trivy image gate, combined report |
 | `master` | the same, plus `coursework.yml` *(new trigger)* | All of the above, then SonarQube, Nexus, image build and scan, ACR, Docker Compose on Azure, Nmap, monitoring, Prometheus and Grafana evidence, combined report, email |
 
+Every pipeline workflow ends with an **Email notification** job that waits for all
+other jobs and runs even after a failure or cancellation (`devsecops.yml` and
+`coursework.yml` on every master run, and the standalone Nmap workflow when it is
+dispatched). The message lists each stage's result and the run link. Pull requests
+and non-master runs send no email because they cannot read the environment secrets.
+A master push triggers both `devsecops.yml` and `coursework.yml`, so it sends two
+emails with different subjects.
+
 `coursework.yml` also stays manually dispatchable. Because it now runs on every
 push to `master`, merging a pull request deploys to the Azure lab VM and sends the
 status email. Pull requests never reach Azure. The `azure-lab` environment still
@@ -88,3 +96,12 @@ Grafana screenshots.
   databases change.
 - The report shows evidence of what each tool did. It does not replace reading
   the findings, and threat modelling remains a human review.
+
+## Final report
+
+`documentation/FINAL-REPORT.pdf` lists every stage with its technique, tool, blocking
+condition, report location and screenshot proof, marks what is still unproven, and
+ends with the original Jenkins/Minikube screenshots. Rebuild it after capturing new
+screenshots with `python scripts/build-final-report.py --pdf`; the script refuses to
+run if a screenshot it cites is missing, and the tests stop a pending stage from
+citing proof it does not have.

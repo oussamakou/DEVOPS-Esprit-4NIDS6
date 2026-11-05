@@ -212,6 +212,82 @@ class NexusTests(unittest.TestCase):
             nexus.verify("http://nexus.example.test/", self.jar, self.pom, "ci", "x")
 
 
+notify = load("notify", "notify-pipeline.py")
+
+
+class EmailNotificationTests(unittest.TestCase):
+    ENV = {"SMTP_HOST": "smtp.example.test", "SMTP_USERNAME": "u", "SMTP_PASSWORD": "never-shown", "MAIL_FROM": "a@example.test",
+           "MAIL_TO": "b@example.test", "RUN_URL": "https://github.com/o/r/actions/runs/1", "RUN_RESULT": "failure",
+           "WORKFLOW_NAME": "Coursework pipeline",
+           "JOB_RESULTS": json.dumps({"security": {"result": "success", "outputs": {}},
+                                      "delivery": {"result": "failure", "outputs": {"image": "registry.example/app@sha256:" + "a" * 64}}})}
+
+    def test_message_lists_every_stage_result_and_the_run_link(self):
+        message = notify.build_message(self.ENV)
+        body = message.get_content()
+        self.assertEqual(message["Subject"], "DevSecOps Coursework pipeline: failure")
+        self.assertIn("security: success", body)
+        self.assertIn("delivery: failure", body)
+        self.assertIn(self.ENV["RUN_URL"], body)
+
+    def test_message_never_contains_credentials_or_job_outputs(self):
+        body = notify.build_message(self.ENV).get_content()
+        self.assertNotIn("never-shown", body)
+        self.assertNotIn("sha256:", body)
+
+    def test_missing_configuration_fails_instead_of_sending(self):
+        with self.assertRaises(SystemExit):
+            notify.build_message({k: v for k, v in self.ENV.items() if k != "SMTP_HOST"})
+
+
+class EmailIsTheLastStageTests(unittest.TestCase):
+    def test_every_pipeline_workflow_ends_with_an_always_email_job(self):
+        import yaml
+        for name in ("coursework", "devsecops", "acceptance-nmap"):
+            workflow = yaml.safe_load((ROOT / f".github/workflows/{name}.yml").read_text(encoding="utf-8"))
+            jobs = workflow["jobs"]
+            self.assertIn("email", jobs, name)
+            email = jobs["email"]
+            others = set(jobs) - {"email"}
+            self.assertEqual(others, set(email["needs"]) if isinstance(email["needs"], list) else {email["needs"]},
+                             f"{name}: email must wait for every other job")
+            self.assertTrue(email["if"].startswith("always()"), name)
+            self.assertIn("EMAIL_ENABLED", email["if"], name)
+            self.assertEqual(email["environment"], "azure-lab", name)
+            self.assertIn("JOB_RESULTS", email["steps"][-1]["env"], name)
+
+
+final_report = load("final_report", "build-final-report.py")
+
+
+class FinalReportTests(unittest.TestCase):
+    def test_every_cited_screenshot_exists(self):
+        missing = [n for n in final_report.referenced_files() if not (final_report.SHOTS / n).is_file()]
+        self.assertEqual(missing, [])
+
+    def test_statuses_are_valid_and_unproven_stages_have_no_fake_proof(self):
+        stages = [s for phase in final_report.CATALOG for s in phase["stages"]]
+        for stage in stages:
+            self.assertIn(stage["status"], final_report.STATUSES, stage["id"])
+        pending = [s for s in stages if s["status"] == "pending"]
+        self.assertTrue(pending)
+        self.assertTrue(all(not s["proof"] for s in pending), "a pending stage must not cite a screenshot")
+
+    def test_every_report_page_the_renderer_creates_is_listed(self):
+        listed = " ".join(s["report"] for phase in final_report.CATALOG for s in phase["stages"])
+        for folder, _, _ in reports.STAGES:
+            if folder in ("precommit", "sast", "secrets", "dependencies", "iac", "acceptance", "monitoring", "prometheus", "grafana"):
+                self.assertIn(folder + "/", listed, folder)
+        for folder in ("build", "quality", "artifact", "image", "registry", "deploy"):
+            self.assertIn(folder + "/report.html", listed, folder)
+
+    def test_report_states_what_is_still_unproven(self):
+        text = final_report.build("test")
+        self.assertIn("Not yet proven", text)
+        self.assertIn("Implemented, not yet run live", text)
+        self.assertIn("data:image/png;base64,", text)
+
+
 guest = load("guest", "monitoring-vm-evidence.py")
 runner = load("azmon", "azure-monitoring-evidence.py")
 
