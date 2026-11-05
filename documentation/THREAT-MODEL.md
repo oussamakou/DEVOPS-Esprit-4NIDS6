@@ -38,6 +38,7 @@ The k3s workflow remains an independent earlier deployment option.
 | Secrets / infrastructure | Build identity compromises the subscription | OIDC, registry-scoped push/read, VM-scoped Run Command; VM AcrPull | Run Command is root-equivalent on that VM |
 | Persistence | VM/disk loss destroys Nexus or student data | Persistent Compose volumes and backup/restore procedure | A volume is not an off-VM backup; restore drill remains required |
 | Host telemetry / privilege | An exposed or compromised exporter reveals VM details or accesses host files | Bind to private IP only; no Internet NSG rule; read-only rootfs/host mounts; non-root UID; drop all capabilities; only needed collectors; resource limits | Host namespaces and mounts are a deliberate monitoring trust boundary; VNet peers can read unauthenticated metrics; no host-level alert rules yet |
+| Network exposure | Deployment publishes MySQL, Actuator, Grafana or Node Exporter to the Internet | Post-deployment Nmap acceptance checks explicit allowed/required TCP ports from an external runner and the application VM; original XML/text reports and a blocking gate | Limited TCP port scope and scan viewpoint; filtered is not proof that no service exists; UDP, exploit tests and application authorization are outside this check |
 
 ## Review checklist
 

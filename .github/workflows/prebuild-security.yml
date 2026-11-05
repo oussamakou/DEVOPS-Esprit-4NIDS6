@@ -20,6 +20,7 @@ jobs:
       - run: pip install -r requirements-security.txt
       - run: python scripts/test-security-controls.py
       - run: python scripts/test-azure-preflight.py
+      - run: python scripts/test-nmap-acceptance.py
       - run: python scripts/install-tools.py gitleaks
       - name: Preserve the STRIDE model for human review
         run: |

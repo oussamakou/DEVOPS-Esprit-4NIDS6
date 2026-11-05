@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "scope": "Only Oussama's studentcourse Azure lab; TCP acceptance from two network viewpoints",
+  "ports": "1-1024,2375,2376,3000,3306,5432,6443,8080,8081,8089,8443,9000,9090,9091,9100,10250,30089",
+  "private_scanner_hostname": "studentcourse-vm",
+  "profiles": {
+    "public": [
+      {"name": "app-public", "target": "158.158.49.102", "allowed_open": [], "required_open": []},
+      {"name": "tools-public", "target": "68.221.67.223", "allowed_open": [443, 8443], "required_open": [443, 8443]}
+    ],
+    "private": [
+      {"name": "app-loopback", "target": "127.0.0.1", "allowed_open": [22, 3000, 8089, 9091], "required_open": [22, 3000, 8089, 9091]},
+      {"name": "app-private", "target": "10.42.1.4", "allowed_open": [22, 9100], "required_open": [22, 9100]},
+      {"name": "tools-private", "target": "10.42.2.4", "allowed_open": [22, 443, 8443, 9100], "required_open": [22, 443, 8443, 9100]}
+    ]
+  }
+}

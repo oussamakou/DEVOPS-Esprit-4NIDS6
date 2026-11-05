@@ -322,6 +322,10 @@ earlier k3s workflow cannot deploy to the Compose VM. Merge the reviewed PR befo
 dispatching **Coursework - SonarQube Nexus Compose** on master.
 
 For monitoring, tunnel app VM ports 8089, 9091 and 3000 to the same local ports.
+The post-deployment [Nmap acceptance gate](NMAP-ACCEPTANCE.md) checks public,
+private and loopback TCP exposure before the monitoring verification job. It
+returns original Nmap reports and a standalone HTML summary. It can also run
+independently against the existing deployment with `acceptance-nmap.yml`.
 Grafana's generated password is stored in `/opt/student-course/.env` on that VM;
 do not print it in CI or screenshots. The dashboard is provisioned automatically.
 The health check verifies live scraping; visually inspect the dashboard under API
