@@ -31,8 +31,9 @@ The following are updated after the local implementation checks finish:
 - Hosted ephemeral k3s: passed the API write/read, MySQL pod replacement/PVC persistence,
   workload readiness, monitoring deployment and Prometheus target-UP checks in
   [run 39511097031](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/39511097031).
-- Azure apply, managed identity/OIDC deployment, off-VM backup restore and rollback
-  remain unverified in a cloud account.
+- For the **k3s** path (`devsecops.yml`): VM-side k3s deployment, credential renewal,
+  off-VM backup restore and rollback remain unverified in a cloud account. The
+  separate Azure Compose coursework path is recorded in the last section of this file.
 
 Hosted Maven, Gitleaks and Terraform/Checkov stages have passed. The first application
 Trivy scan blocked 11 HIGH/CRITICAL findings. See `SECURITY-GATE-CASE-STUDY.md` for the
@@ -58,3 +59,26 @@ The tool installer verifies SHA256 manifests fetched from each tool's release ho
 This detects corrupt/mismatched downloads; it is not independent verification of
 the publisher's signing identity. GitHub Actions are resolved to immutable commits.
 Review automated update PRs rather than assuming pinned software stays safe forever.
+
+## Azure Compose coursework path (status as of 2026-11-05)
+
+This path is exercised by `coursework.yml` and `acceptance-nmap.yml`, and runs
+against real Azure resources in the owner's subscription. The sections above
+describe the earlier k3s path and predate it.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| First full delivery | Failed at the Compose stage (missing localhost port mapping, config file permissions); repaired | [Run 39883066388](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/39883066388), COMPOSE-STARTUP-CASE-STUDY.md |
+| Delivery after the repair | Delivery and email jobs succeeded | [Run 39886514168](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/39886514168) |
+| Delivery with pre-build security gates | Six security jobs, delivery and email jobs succeeded | [Run 40899036172](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/40899036172) |
+| Nmap acceptance against the deployed VMs | Passed after a first run failed on silently filtered ports | [Run 42016218929](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/42016218929); failed run 42013118446 |
+| SonarQube baseline | Gate OK on the first analysis, with 11 open issues and 41.5% coverage | SONAR-FIRST-BASELINE.md |
+
+Not yet verified:
+
+- A single `coursework.yml` run covering the current graph (deploy, Nmap, monitoring,
+  combined reports, email). The last full run predates the Nmap and node-exporter PRs.
+- Receipt of the status email in the inbox (SMTP acceptance only).
+- Grafana dashboards viewed under real API traffic, and alerting (none is configured).
+- Off-VM backups and a restore drill for MySQL, PostgreSQL and Nexus data.
+- Pipeline timing and image-size comparisons (see `evidence/README.md`).
