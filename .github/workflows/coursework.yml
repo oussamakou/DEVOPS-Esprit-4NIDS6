@@ -262,4 +262,6 @@ jobs:
           MAIL_TO: ${{ vars.MAIL_TO }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           RUN_RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || contains(needs.*.result, 'skipped') && 'skipped' || 'success' }}
+          WORKFLOW_NAME: Coursework pipeline
+          JOB_RESULTS: ${{ toJSON(needs) }}
         run: python scripts/notify-pipeline.py
