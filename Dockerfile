@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # CI uses its tested JAR. The local target builds from source for Docker Compose.
-FROM maven:3.9.11-eclipse-temurin-17 AS builder
+FROM maven:3.9-eclipse-temurin-26 AS builder
 WORKDIR /build
 COPY pom.xml ./
 RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp dependency:go-offline
