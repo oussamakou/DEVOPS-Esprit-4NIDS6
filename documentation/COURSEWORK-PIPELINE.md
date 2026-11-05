@@ -17,13 +17,18 @@ No local VM, Vagrant or working Docker Desktop is needed.
 | 5. Build image | Build from that same JAR, then reject HIGH/CRITICAL image vulnerabilities |
 | 6. Deploy image | Publish the scanned image to Azure Container Registry and resolve its immutable digest |
 | 7. Docker Compose | Azure Run Command pulls that digest using the VM's managed identity and starts the application stack |
-| 8. Monitoring | Verify the API/database request, actual running image, Prometheus target UP and Grafana health |
-| 9. Email | Send the success/failure status and Actions URL via authenticated SMTP with STARTTLS |
+| 8. Acceptance - Nmap | Reusable workflow `acceptance-nmap.yml`: scan the deployed VMs from an external runner and from inside Azure, and block on unexpected or missing open TCP ports ([details](NMAP-ACCEPTANCE.md)) |
+| 9. Monitoring | Verify the API/database request, actual running image, Prometheus targets UP (application and both VM exporters) and Grafana health |
+| Security reports | Combine the pre-build and Nmap evidence into the `devsecops-security-reports` artifact; runs even after a failed gate |
+| 10. Email | Send the success/failure status and Actions URL via authenticated SMTP with STARTTLS |
 
-The numbered stages are named steps within the delivery job so they share the same
-tested artifact. Email is an independent job that can run after delivery failure.
+Stages 1 to 7 are named steps within the delivery job so they share the same
+tested artifact. Acceptance, monitoring, reports and email are separate jobs;
+email waits for the report package and can run after a delivery failure.
 Email is explicitly skipped until repository variable `EMAIL_ENABLED=true` is set.
-The workflow is manually dispatched **on master**, uses the `azure-lab` environment,
+The workflow runs on every push to **master** and can also be dispatched manually
+on master (see [PROFESSOR-DEMO.md](PROFESSOR-DEMO.md) for the per-stage reports
+each run publishes). It uses the `azure-lab` environment,
 and fails on missing cloud settings; unconfigured external services never count as
 passing. Restrict environment deployment branches to master and configure approval
 protection as appropriate for the repository plan.
@@ -38,8 +43,10 @@ then report collection. Maven compilation cannot start if a required check fails
 In the coursework run the security job checks out source before the numbered
 delivery checkout; each runner needs its own checkout of the same revision.
 
-Download the **professor-security-reports** artifact and open `index.html` for the
-readable report. It links original hook logs, Semgrep/Gitleaks JSON, Checkov
+Download the **devsecops-security-reports** artifact from a coursework run (it adds the
+Nmap acceptance evidence to the pre-build files, which are also kept alone in
+**professor-security-reports**) and open `index.html` for the readable report.
+It links original hook logs, Semgrep/Gitleaks JSON, Checkov
 JSON/JUnit/logs, the source POM, dependency JSON, CycloneDX SBOM and the threat model.
 Security artifacts are retained for 30 days. Threat modeling remains human review,
 not a vulnerability scanner whose correctness a green job can prove.
@@ -185,11 +192,11 @@ combined regional and family usage must fit the quota table. Use the environment
 overrides above for the selected pair. ARM Bpsv2 sizes are deliberately excluded
 because the application image is built for linux/amd64.
 
-Use the coursework branch until the PR is merged:
+The coursework branch is merged, so clone the default branch (`master`):
 
 ```bash
 cd "$HOME/clouddrive"
-git clone --branch codex/azure-devsecops https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6.git student-course
+git clone https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6.git student-course
 cd student-course
 az account show --query '{Name:name,State:state}' -o table
 az provider register --namespace Microsoft.Compute --wait
@@ -318,8 +325,8 @@ Set these **environment secrets**, never paste their values into chat or Git:
 
 Set repository variable `EMAIL_ENABLED=true` only after the SMTP configuration and
 recipient are ready. Keep repository variable `AZURE_DEPLOY_ENABLED=false` so the
-earlier k3s workflow cannot deploy to the Compose VM. Merge the reviewed PR before
-dispatching **Coursework - SonarQube Nexus Compose** on master.
+earlier k3s workflow cannot deploy to the Compose VM. Dispatch
+**Coursework - SonarQube Nexus Compose** on master.
 
 For monitoring, tunnel app VM ports 8089, 9091 and 3000 to the same local ports.
 The post-deployment [Nmap acceptance gate](NMAP-ACCEPTANCE.md) checks public,

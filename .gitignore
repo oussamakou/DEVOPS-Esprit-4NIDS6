@@ -57,3 +57,6 @@ deploy-result.json
 *.log
 .firecrawl/
 nexus-secrets.json
+
+# Regenerable: python scripts/build-final-report.py
+documentation/FINAL-REPORT.html

@@ -1,13 +1,19 @@
 # Azure setup: owner actions and reproducible deployment
 
-There is no Azure subscription configured in this workspace. The local code cannot
-create an account, accept Azure billing terms or choose a payment method for you.
-Complete the account/billing steps yourself, then use these commands.
+This guide covers the earlier single-VM **k3s** path. The Azure Compose coursework
+path (two VMs) is in [COURSEWORK-PIPELINE.md](COURSEWORK-PIPELINE.md) and has already
+been applied in the owner's subscription.
+
+The local code cannot create an account, accept Azure billing terms or choose a
+payment method for you. Complete the account/billing steps yourself, then use these
+commands.
 
 ## 1. Check costs before creating anything
 
 Create an Azure account/subscription and inspect its actual free credit terms.
-Check your chosen region's prices and quota for Standard_B2s, a 32-GB managed disk,
+Check your chosen region's prices and quota for the VM size (the Terraform default is
+Standard_B2als_v2; the student subscription rejected Standard_B2s as
+`NotAvailableForSubscription`, so confirm eligibility first), a 32-GB managed disk,
 a Standard static public IP, Basic ACR and outbound transfers. This combination is
 not guaranteed free. Monitoring shares the VM, so do not choose a 1-GB VM for this lab.
 Set a Cost Management budget/alert; a budget alerts you, it is not a hard spending cap.

@@ -10,8 +10,10 @@ The original Jenkins/Minikube implementation is preserved in
 [`LEGACY-JENKINS-MINIKUBE.md`](LEGACY-JENKINS-MINIKUBE.md). The Java API and
 its history remain the starting point; the Azure path is new work.
 
-**Implementation is provided; Azure deployment and performance claims require actual runs.**
-See [`VALIDATION.md`](VALIDATION.md) for checks performed on this machine and
+**Status:** the Azure Compose coursework path has been provisioned and has run in
+GitHub Actions; the k3s path described below has not been deployed
+(`AZURE_DEPLOY_ENABLED=false`). Performance claims still require measured runs.
+See [`VALIDATION.md`](VALIDATION.md) for what has and has not been verified and
 [`../evidence/README.md`](../evidence/README.md) for what to measure.
 
 ## Start locally (Windows PowerShell)

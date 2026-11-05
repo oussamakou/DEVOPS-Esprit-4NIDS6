@@ -28,6 +28,11 @@ def capture(name, output, command):
                           if os.environ.get("GITHUB_RUN_ID") else None)}
     (folder / f"{name}-result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(f"CHECK_RESULT: {name} {result['status']} (exit {code})")
+    # Show what this tool did on the Actions run page as soon as its job finishes.
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
+            stream.write(f"- **{name}**: {result['status']} (exit {code}), "
+                         f"{result['started_utc']} to {result['finished_utc']} UTC\n")
     return code
 
 

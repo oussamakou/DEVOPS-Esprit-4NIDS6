@@ -45,7 +45,20 @@ jobs:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('pom.xml') }}
           restore-keys: ${{ runner.os }}-maven-
-      - run: bash ./mvnw -B -ntp verify
+      - name: Maven compile, test and JaCoCo coverage
+        run: python3 scripts/capture-check.py maven .tools/reports/build -- bash ./mvnw -B -ntp verify
+      - name: Keep the Surefire and JaCoCo reports
+        if: always()
+        run: |
+          mkdir -p .tools/reports/build
+          cp -r target/surefire-reports .tools/reports/build/ || echo "No Surefire reports were produced"
+          cp -r target/site/jacoco .tools/reports/build/ || echo "No JaCoCo report was produced"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: stage-build
+          path: .tools/reports/
+          retention-days: 30
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: tested-jar
@@ -90,7 +103,18 @@ jobs:
         run: |
           python3 scripts/install-tools.py k3d
           docker load --input /tmp/image.tar
-          bash scripts/smoke-k3s.sh "student-management:$COMMIT_SHA"
+          python3 scripts/stage-facts.py .tools/reports/image docker-build \
+            image="student-management:$COMMIT_SHA" \
+            image_id="$(docker image inspect --format '{{.Id}}' "student-management:$COMMIT_SHA")" \
+            size_bytes="$(docker image inspect --format '{{.Size}}' "student-management:$COMMIT_SHA")" \
+            tar_sha256="$(cut -d' ' -f1 /tmp/image.tar.sha256)"
+          python3 scripts/capture-check.py k3s-smoke .tools/reports/image -- bash scripts/smoke-k3s.sh "student-management:$COMMIT_SHA"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: stage-image-build
+          path: .tools/reports/
+          retention-days: 30
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: application-image
@@ -115,13 +139,52 @@ jobs:
           cd /tmp
           sha256sum -c image.tar.sha256
           cd "$GITHUB_WORKSPACE"
-          .tools/trivy image --input /tmp/image.tar --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format json --output trivy.json
+          python3 scripts/capture-check.py trivy-image .tools/reports/image -- .tools/trivy image --input /tmp/image.tar --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format json --output .tools/reports/image/trivy-image.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: stage-image-scan
+          path: .tools/reports/
+          retention-days: 30
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: vulnerability-report
-          path: trivy.json
+          path: .tools/reports/image/trivy-image.json
           retention-days: 14
+
+  reports:
+    name: DevSecOps security reports - every stage of this push
+    needs: [security, build, docker, trivy]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Collect pre-commit and commit evidence
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: professor-security-reports
+          path: .tools/reports
+      - name: Collect build and image evidence
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: stage-*
+          merge-multiple: true
+          path: .tools/reports
+      - name: Generate the combined report and workflow summary
+        env:
+          SECURITY_JOB_RESULTS: ${{ toJSON(needs) }}
+          SECURITY_REPORT_ARTIFACT: devsecops-security-reports
+        run: python3 scripts/render-security-reports.py .tools/reports
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: devsecops-security-reports
+          path: .tools/reports/
+          retention-days: 30
 
   deploy:
     name: 6 - Publish scanned image and deploy
@@ -173,3 +236,28 @@ jobs:
           name: deployment-evidence
           path: deploy-result.json
           retention-days: 14
+
+  email:
+    name: 7 - Email notification
+    needs: [security, build, docker, trivy, deploy, reports]
+    # Always the last stage on master pushes. The k3s deploy job is disabled by design
+    # (AZURE_DEPLOY_ENABLED=false), so a skipped job is not reported as a problem here.
+    if: always() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && vars.EMAIL_ENABLED == 'true'
+    environment: azure-lab
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Send status, stage results and run link (success or failure)
+        env:
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ vars.MAIL_FROM }}
+          MAIL_TO: ${{ vars.MAIL_TO }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+          WORKFLOW_NAME: Commit security and build
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: python3 scripts/notify-pipeline.py

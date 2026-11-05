@@ -19,7 +19,7 @@ the owner views it through the existing Grafana SSH tunnel.
 The app, Prometheus and Grafana also join a host-access bridge for Docker's
 localhost-only port publishing; this permits outbound traffic. MySQL joins only
 the internal database network. Application/monitoring UIs require the SSH tunnel.
-An SMTP server receives pipeline status and a run link, never credentials/reports.
+An SMTP server receives the pipeline status, each stage's result name and a run link, never credentials, report contents or job outputs such as image digests.
 
 The developer workstation, untrusted pull request, trusted delivery environment,
 public tool endpoints and private runtime network are separate trust boundaries.
