@@ -1,5 +1,7 @@
 """Controlled XML fixtures verify acceptance fails closed; no network scans run here."""
 import importlib.util
+import base64
+from contextlib import redirect_stdout
 import io
 import json
 from pathlib import Path
@@ -21,6 +23,7 @@ def module(name, filename):
 
 nmap = module("acceptance", "nmap-acceptance.py")
 azure = module("azure_acceptance", "azure-nmap-acceptance.py")
+probe = module("vm_probe", "nmap-vm-probe.py")
 POLICY = nmap.load_policy(ROOT / "security/nmap-policy.json")
 
 
@@ -80,6 +83,10 @@ class AcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "completed"):
             self.assess(POLICY["profiles"]["public"][1], mutate=lambda r: r.find("runstats/finished").set("exit", "error"))
 
+    def test_host_timeout_cannot_pass_even_with_success_exit_and_ports(self):
+        with self.assertRaisesRegex(ValueError, "host timeout"):
+            self.assess(POLICY["profiles"]["public"][1], mutate=lambda r: r.find("host").set("timedout", "true"))
+
     def test_ambiguous_port_state_cannot_pass(self):
         with self.assertRaisesRegex(ValueError, "ambiguous"):
             self.assess(POLICY["profiles"]["public"][1], mutate=lambda r: r.find("host/ports/port/state").set("state", "open|filtered"))
@@ -134,6 +141,22 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(jobs["acceptance"]["uses"], "./.github/workflows/acceptance-nmap.yml")
         self.assertIn("acceptance", jobs["monitoring"]["needs"])
         self.assertIn("acceptance", jobs["email"]["needs"])
+
+    def test_transport_chunks_fit_azure_output_and_reassemble_original_bytes(self):
+        payload = bytes(range(256)) * 80
+        identifier = "a" * 32
+        with tempfile.TemporaryDirectory() as directory, patch.object(probe, "STORE", Path(directory)):
+            folder = Path(directory) / identifier
+            folder.mkdir()
+            (folder / "reports.zip").write_bytes(payload)
+            chunks = []
+            for index in range((len(base64.b64encode(payload)) + probe.CHUNK - 1) // probe.CHUNK):
+                text = io.StringIO()
+                with redirect_stdout(text):
+                    probe.emit(identifier, index)
+                self.assertLess(len(text.getvalue().encode()), 4096)
+                chunks.append(json.loads(text.getvalue().split(" ", 1)[1])["payload"])
+            self.assertEqual(base64.b64decode(''.join(chunks)), payload)
 
 
 if __name__ == "__main__":
