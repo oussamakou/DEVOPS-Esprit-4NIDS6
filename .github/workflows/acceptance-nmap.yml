@@ -53,3 +53,14 @@ jobs:
           name: nmap-acceptance-original-reports
           path: .tools/reports/acceptance/
           retention-days: 30
+      - name: Include Nmap in the shared DevSecOps report format
+        if: ${{ !cancelled() }}
+        env:
+          SECURITY_REPORT_ARTIFACT: devsecops-security-reports-acceptance
+        run: python scripts/render-security-reports.py .tools/reports
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: devsecops-security-reports-acceptance
+          path: .tools/reports/
+          retention-days: 30

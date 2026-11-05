@@ -14,6 +14,9 @@ def render(folder):
     rows = []
     for path in sorted(folder.rglob("*-result.json")):
         result = json.loads(path.read_text(encoding="utf-8"))
+        # Nmap's acceptance-result.json is an assessment, not a captured command.
+        if not {"check", "status", "exit_code", "finished_utc"} <= result.keys():
+            continue
         rows.append((result["check"], result["status"], str(result["exit_code"]), result["finished_utc"], path.relative_to(folder).as_posix()))
     jobs = json.loads(os.environ.get("SECURITY_JOB_RESULTS", "{}"))
     package_count = "not available"
@@ -35,16 +38,39 @@ def render(folder):
         data = json.loads(semgrep.read_text())
         stats.append(f"Semgrep: {len(data.get('paths', {}).get('scanned', []))} files scanned, {len(data.get('results', []))} application findings, {len(data.get('errors', []))} scanner errors")
     stats.append(f"Source dependency packages analyzed: {package_count}")
+    acceptance = folder / "acceptance"
+    nmap_path = acceptance / "acceptance-result.json"
+    nmap = json.loads(nmap_path.read_text(encoding="utf-8")) if nmap_path.is_file() else None
+    if nmap:
+        profiles = [p for view in nmap.get("results", []) for p in view.get("profiles", [])]
+        stats.append(f"Nmap acceptance: {nmap.get('status', 'unavailable')}; {len(profiles)} scan profiles; {sum(len(p.get('unexpected_open', [])) for p in profiles)} unexpected open-port observations")
+        if (acceptance / "index.html").is_file():
+            (acceptance / "report.html").write_text((acceptance / "index.html").read_text(encoding="utf-8"), encoding="utf-8")
     run = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
     head = os.environ.get("GITHUB_SHA", "local")
     files = [p for p in sorted(folder.rglob("*")) if p.is_file() and p.name != "index.html"]
-    body = """<!doctype html><html lang="en"><meta charset="utf-8"><title>Pre-build security evidence</title>
+    body = """<!doctype html><html lang="en"><meta charset="utf-8"><title>DevSecOps security reports</title>
 <style>body{font:17px/1.5 Arial,sans-serif;color:#172332;max-width:1100px;margin:40px auto;padding:0 24px}h1{font-size:32px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:10px;text-align:left}th{background:#eef3f7}a{color:#075e91}code{overflow-wrap:anywhere}li{margin:8px 0}@media print{body{margin:0;font-size:12px}a{color:inherit}}</style>"""
-    body += f"<h1>Pre-build security evidence</h1><p>Revision: <code>{esc(head)}</code><br>Run: <a href='{esc(run)}'>{esc(run)}</a></p>"
-    body += "<p>Order: checkout, local-hook replay, commit security gates, then Maven compilation. Threat modeling remains a human review activity. A saved document does not prove a human review occurred.</p>"
+    body += f"<h1>DevSecOps security reports</h1><p>Report execution revision: <code>{esc(head)}</code><br>Run: <a href='{esc(run)}'>{esc(run)}</a></p>"
+    body += "<p>Order: checkout, local-hook replay and commit security gates before Maven compilation; Nmap acceptance after deployment. Each original record retains its own execution time and provenance. Threat modeling remains a human review activity.</p>"
     if jobs:
         body += "<h2>Security job outcomes</h2><ul>" + "".join(f"<li>{esc(name)}: {esc(value['result'])}</li>" for name, value in jobs.items()) + "</ul>"
     body += "<h2>Scanner measurements</h2><ul>" + "".join(f"<li>{esc(s)}</li>" for s in stats) + "</ul>"
+    body += "<h2>Acceptance phase: Nmap</h2>"
+    if nmap:
+        body += f"<p>Recorded acceptance result: <strong>{esc(nmap.get('status', 'unavailable'))}</strong>. <a href='acceptance/report.html'>Open the Nmap report</a> / <a href='acceptance/acceptance-result.json'>Original assessment JSON</a>.</p>"
+        body += "<p>This is a scoped TCP exposure check. Filtered is distinct from closed; service names can be port-table guesses. Missing/incomplete scans cannot establish a passed assessment. Earlier failed attempts remain historical evidence.</p>"
+        body += "<table><tr><th>Viewpoint / profile</th><th>Target</th><th>TCP ports scanned</th><th>Open ports</th><th>Result</th></tr>"
+        for view in nmap.get("results", []):
+            for profile in view.get("profiles", []):
+                values = [view.get("view", "") + " / " + profile["name"], profile["target"],
+                          profile.get("ports_scanned", "incomplete"), str(profile.get("open_ports", "not determined")), profile["status"]]
+                body += "<tr>" + "".join(f"<td>{esc(str(value))}</td>" for value in values) + "</tr>"
+        body += "</table>"
+        for view in nmap.get("results", []):
+            body += f"<p>{esc(view.get('view', ''))} scan: {esc(view.get('started_utc', 'time not recorded'))} to {esc(view.get('finished_utc', 'time not recorded'))} UTC.</p>"
+    else:
+        body += "<p>Nmap acceptance is not available in this snapshot. A pre-build report is generated before deployment, so it cannot contain a later acceptance scan. The final coursework report combines the phases when their artifacts exist.</p>"
     body += "<h2>Actual command outcomes</h2><table><tr><th>Check</th><th>Result</th><th>Exit</th><th>Finished UTC</th><th>Original record</th></tr>"
     for check, status, code, finished, record in rows:
         body += f"<tr><td>{esc(check)}</td><td>{esc(status)}</td><td>{esc(code)}</td><td>{esc(finished)}</td><td><a href='{esc(record)}'>JSON record</a></td></tr>"
@@ -72,9 +98,10 @@ def render(folder):
             page += "<p>The STRIDE threat model is preserved as THREAT-MODEL.md. It remains a human review activity.</p>"
         page += "</html>"
         (section / "report.html").write_text(page, encoding="utf-8")
-    summary = "## Security checks before Maven\n\n" + "\n".join(f"- {name}: **{value['result']}**" for name, value in jobs.items())
+    summary = "## DevSecOps security reports\n\n" + "\n".join(f"- {name}: **{value['result']}**" for name, value in jobs.items())
     summary += "\n\n" + "\n".join(f"- {s}" for s in stats)
-    summary += "\n\nDownload **professor-security-reports** and open **index.html** for raw reports, logs and the threat model.\n"
+    artifact = os.environ.get("SECURITY_REPORT_ARTIFACT") or ("devsecops-security-reports" if nmap else "professor-security-reports")
+    summary += f"\n\nDownload **{artifact}** and open **index.html** for the original reports, logs and available phase assessments.\n"
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
             stream.write(summary)

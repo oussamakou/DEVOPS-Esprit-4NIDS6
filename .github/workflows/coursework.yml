@@ -167,9 +167,39 @@ jobs:
           name: monitoring-evidence
           path: monitoring-result.json
           retention-days: 30
+  reports:
+    name: DevSecOps security reports - all phases
+    needs: [security, acceptance, monitoring]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Collect pre-commit and commit evidence
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: professor-security-reports
+          path: .tools/reports
+      - name: Collect acceptance evidence without overwriting the pre-build index
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: nmap-acceptance-original-reports
+          path: .tools/reports/acceptance
+      - name: Generate the combined standalone security report
+        env:
+          SECURITY_JOB_RESULTS: ${{ toJSON(needs) }}
+        run: python scripts/render-security-reports.py .tools/reports
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: devsecops-security-reports
+          path: .tools/reports/
+          retention-days: 30
   email:
     name: 10 - Email notification
-    needs: [security, delivery, acceptance, monitoring]
+    needs: [security, delivery, acceptance, monitoring, reports]
     if: always() && github.ref == 'refs/heads/master' && vars.EMAIL_ENABLED == 'true'
     environment: azure-lab
     runs-on: ubuntu-24.04

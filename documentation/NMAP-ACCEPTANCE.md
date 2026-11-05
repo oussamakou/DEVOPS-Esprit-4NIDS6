@@ -83,6 +83,16 @@ version is saved in each viewpoint's reports.
 
 ## Original reports for the professor
 
+The full coursework run also publishes **devsecops-security-reports**, combining
+the pre-commit/commit evidence and the Nmap acceptance files under one `index.html`.
+Its Nmap section links to `acceptance/report.html`, the original XML/text files,
+per-target outcomes and the scan timestamps. The report-collection job runs even
+after a failed gate, and email waits for the report package.
+
+A standalone acceptance run publishes **devsecops-security-reports-acceptance**
+in the same report format. It honestly marks the pre-build dependency inventory
+as unavailable in that run; it does not claim those earlier scans were rerun.
+
 Download artifact **nmap-acceptance-original-reports**, extract it and open
 `index.html`. The folder is self-contained and usable without GitHub. It includes
 the original `.xml`, `.nmap`, `.gnmap` and console `.log` for each scan, plus
