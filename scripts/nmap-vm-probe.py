@@ -10,7 +10,7 @@ import uuid
 import zipfile
 
 STORE = Path("/opt/student-course/acceptance/nmap")
-CHUNK = 2000  # Azure Run Command only retains a small stdout tail.
+CHUNK = 3000  # Includes <250 bytes of metadata; fits Azure's 4096-byte stdout tail.
 
 
 def emit(identifier, index):
