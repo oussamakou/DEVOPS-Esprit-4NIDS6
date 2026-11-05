@@ -21,6 +21,16 @@ lookups (`-n`), no host-discovery dependency (`-Pn`), light service detection
 (`-sV --version-light`), bounded rate/retries and a per-host timeout. No exploit
 or vulnerability NSE scripts run.
 
+The first real external app scan hit its 180-second host timeout because the
+NSG silently drops the tested traffic. Nmap still reported process exit success,
+but produced no port results; the completeness gate rejected it. The corrected
+scan keeps the same ports, policy, one retry, 180-second host deadline and
+100-probe/second maximum. A bounded 16–32 concurrent-probe window and explicit
+500 ms initial / 1 second maximum RTT timeouts prevent the default timing backoff
+from consuming the whole deadline. Host timeout markers are also explicitly
+rejected. XML has no platform-specific stylesheet, so the original report can
+be opened on another computer. The failed originals remain valid error evidence.
+
 | Scanner viewpoint | Target | Required and allowed open TCP ports |
 | --- | --- | --- |
 | External GitHub runner | App public IP `158.158.49.102` | None in the tested scope |

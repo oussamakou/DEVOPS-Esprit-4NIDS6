@@ -71,6 +71,8 @@ def assess_xml(path, profile, ports):
     if len(hosts) != 1 or hosts[0].find("status") is None or hosts[0].find("status").get("state") != "up":
         raise ValueError("Target scan is absent, down or timed out")
     host = hosts[0]
+    if host.get("timedout") == "true":
+        raise ValueError("Nmap host timeout: scan coverage is incomplete")
     if [a.get("addr") for a in host.findall("address") if a.get("addrtype") == "ipv4"] != [profile["target"]]:
         raise ValueError("XML target differs from the authorized policy target")
     observations, explicit = [], set()
@@ -114,7 +116,9 @@ def run_view(view, output, policy_path=ROOT / "security/nmap-policy.json"):
         for profile in policy["profiles"][view]:
             prefix = output / profile["name"]
             command = [binary, "--unprivileged", "-sT", "-Pn", "-n", "-sV", "--version-light", "--reason", "-T3",
-                       "--max-rate", "100", "--max-parallelism", "32", "--max-retries", "1", "--host-timeout", "180s",
+                       "--max-rate", "100", "--min-parallelism", "16", "--max-parallelism", "32",
+                       "--initial-rtt-timeout", "500ms", "--max-rtt-timeout", "1s",
+                       "--max-retries", "1", "--host-timeout", "180s", "--no-stylesheet",
                        "-p", policy["ports"], "-oA", str(prefix), profile["target"]]
             item = {"name": profile["name"], "target": profile["target"], "command": command, "status": "error"}
             try:

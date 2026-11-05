@@ -80,6 +80,10 @@ class AcceptanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "completed"):
             self.assess(POLICY["profiles"]["public"][1], mutate=lambda r: r.find("runstats/finished").set("exit", "error"))
 
+    def test_host_timeout_cannot_pass_even_with_success_exit_and_ports(self):
+        with self.assertRaisesRegex(ValueError, "host timeout"):
+            self.assess(POLICY["profiles"]["public"][1], mutate=lambda r: r.find("host").set("timedout", "true"))
+
     def test_ambiguous_port_state_cannot_pass(self):
         with self.assertRaisesRegex(ValueError, "ambiguous"):
             self.assess(POLICY["profiles"]["public"][1], mutate=lambda r: r.find("host/ports/port/state").set("state", "open|filtered"))
