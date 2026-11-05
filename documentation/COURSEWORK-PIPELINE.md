@@ -26,7 +26,9 @@ Stages 1 to 7 are named steps within the delivery job so they share the same
 tested artifact. Acceptance, monitoring, reports and email are separate jobs;
 email waits for the report package and can run after a delivery failure.
 Email is explicitly skipped until repository variable `EMAIL_ENABLED=true` is set.
-The workflow is manually dispatched **on master**, uses the `azure-lab` environment,
+The workflow runs on every push to **master** and can also be dispatched manually
+on master (see [PROFESSOR-DEMO.md](PROFESSOR-DEMO.md) for the per-stage reports
+each run publishes). It uses the `azure-lab` environment,
 and fails on missing cloud settings; unconfigured external services never count as
 passing. Restrict environment deployment branches to master and configure approval
 protection as appropriate for the repository plan.

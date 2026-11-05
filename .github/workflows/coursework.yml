@@ -1,5 +1,7 @@
 name: Coursework - SonarQube Nexus Compose
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
 permissions:
   contents: read
@@ -50,7 +52,13 @@ jobs:
       - name: Install delivery helper dependency
         run: pip install --disable-pip-version-check PyYAML==6.0.3
       - name: 2 - Compile Maven and run tests
-        run: bash ./mvnw -B -ntp verify
+        run: python scripts/capture-check.py maven .tools/reports/build -- bash ./mvnw -B -ntp verify
+      - name: Keep the Surefire and JaCoCo reports
+        if: always()
+        run: |
+          mkdir -p .tools/reports/build
+          cp -r target/surefire-reports .tools/reports/build/ || echo "No Surefire reports were produced"
+          cp -r target/site/jacoco .tools/reports/build/ || echo "No JaCoCo report was produced"
       - name: Install image scanner after the pre-build security gates
         run: python scripts/install-tools.py trivy
       - name: Check cloud configuration (missing setup must fail clearly)
@@ -78,21 +86,32 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          bash ./mvnw -B -ntp sonar:sonar \
+          python scripts/capture-check.py sonar .tools/reports/quality -- bash ./mvnw -B -ntp sonar:sonar \
             -Dsonar.host.url="$SONAR_HOST_URL" -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
             -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
+      - name: Keep the SonarQube analysis task record
+        if: always()
+        run: |
+          mkdir -p .tools/reports/quality
+          cp .scannerwork/report-task.txt .tools/reports/quality/ || echo "No SonarQube task record was produced"
       - name: 4 - Nexus publish the tested Maven artifact
         env:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
         run: |
-          bash ./mvnw -B -ntp org.apache.maven.plugins:maven-deploy-plugin:3.1.4:deploy-file \
+          python scripts/capture-check.py nexus-deploy .tools/reports/artifact -- bash ./mvnw -B -ntp org.apache.maven.plugins:maven-deploy-plugin:3.1.4:deploy-file \
             -DrepositoryId=nexus -Durl="$NEXUS_MAVEN_URL" -DpomFile=pom.xml \
             -Dfile=target/student-management-0.0.1-SNAPSHOT.jar
+          python scripts/capture-check.py nexus-verify .tools/reports/artifact -- python scripts/nexus-artifact-report.py \
+            "$NEXUS_MAVEN_URL" target/student-management-0.0.1-SNAPSHOT.jar pom.xml .tools/reports/artifact
       - name: 5 - Build image from the tested JAR and scan
         run: |
-          docker build --target ci --tag "student-management:$GITHUB_SHA" .
-          .tools/trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format json --output trivy.json "student-management:$GITHUB_SHA"
+          python scripts/capture-check.py docker-build .tools/reports/image -- docker build --target ci --tag "student-management:$GITHUB_SHA" .
+          python scripts/stage-facts.py .tools/reports/image docker-build \
+            image="student-management:$GITHUB_SHA" \
+            image_id="$(docker image inspect --format '{{.Id}}' "student-management:$GITHUB_SHA")" \
+            size_bytes="$(docker image inspect --format '{{.Size}}' "student-management:$GITHUB_SHA")"
+          python scripts/capture-check.py trivy-image .tools/reports/image -- .tools/trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format json --output .tools/reports/image/trivy-image.json "student-management:$GITHUB_SHA"
       - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -104,16 +123,26 @@ jobs:
           registry=$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)
           az acr login --name "$ACR_NAME"
           docker tag "student-management:$GITHUB_SHA" "$registry/student-management:$GITHUB_SHA"
-          docker push "$registry/student-management:$GITHUB_SHA"
+          python scripts/capture-check.py acr-push .tools/reports/registry -- docker push "$registry/student-management:$GITHUB_SHA"
           image=$(docker inspect --format '{{index .RepoDigests 0}}' "$registry/student-management:$GITHUB_SHA")
           [[ "$image" == "$registry/student-management@sha256:"* ]]
+          python scripts/stage-facts.py .tools/reports/registry acr-push registry="$registry" tag="$GITHUB_SHA" image="$image"
           echo "DEPLOY_IMAGE=$image" >> "$GITHUB_ENV"
           echo "image=$image" >> "$GITHUB_OUTPUT"
       - name: 7 - Docker Compose on the Azure VM
         run: |
           python scripts/make-compose-bundle.py deploy "$DEPLOY_IMAGE" > /tmp/compose-deploy.sh
           az vm run-command invoke --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_VM_NAME" --command-id RunShellScript --scripts @/tmp/compose-deploy.sh -o json > compose-result.json
-          python scripts/check-run-command.py compose-result.json
+          mkdir -p .tools/reports/deploy
+          cp compose-result.json .tools/reports/deploy/compose-run-command.json
+          python scripts/stage-facts.py .tools/reports/deploy compose-deploy image="$DEPLOY_IMAGE" vm="$AZURE_VM_NAME"
+          python scripts/capture-check.py compose-deploy .tools/reports/deploy -- python scripts/check-run-command.py compose-result.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: stage-delivery
+          path: .tools/reports/
+          retention-days: 30
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -122,7 +151,6 @@ jobs:
             target/surefire-reports
             target/site/jacoco
             .scannerwork/report-task.txt
-            trivy.json
             compose-result.json
           retention-days: 14
   acceptance:
@@ -160,7 +188,18 @@ jobs:
         run: |
           python scripts/make-compose-bundle.py monitor "$DEPLOY_IMAGE" > /tmp/compose-monitor.sh
           az vm run-command invoke --resource-group "$AZURE_RESOURCE_GROUP" --name "$AZURE_VM_NAME" --command-id RunShellScript --scripts @/tmp/compose-monitor.sh -o json > monitoring-result.json
-          python scripts/check-run-command.py monitoring-result.json
+          mkdir -p .tools/reports/monitoring
+          cp monitoring-result.json .tools/reports/monitoring/monitor-run-command.json
+          python scripts/capture-check.py monitoring-check .tools/reports/monitoring -- python scripts/check-run-command.py monitoring-result.json
+      - name: Collect Prometheus and Grafana evidence from the VM
+        if: ${{ !cancelled() }}
+        run: python scripts/capture-check.py prometheus-grafana .tools/reports/monitoring -- python scripts/azure-monitoring-evidence.py --output .tools/reports
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: stage-monitoring
+          path: .tools/reports/
+          retention-days: 30
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -169,7 +208,7 @@ jobs:
           retention-days: 30
   reports:
     name: DevSecOps security reports - all phases
-    needs: [security, acceptance, monitoring]
+    needs: [security, delivery, acceptance, monitoring]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -180,6 +219,13 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: professor-security-reports
+          path: .tools/reports
+      - name: Collect build, quality, artifact, image, deployment and monitoring evidence
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: stage-*
+          merge-multiple: true
           path: .tools/reports
       - name: Collect acceptance evidence without overwriting the pre-build index
         continue-on-error: true

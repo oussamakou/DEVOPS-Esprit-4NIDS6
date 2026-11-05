@@ -9,6 +9,7 @@ Compose → monitoring → email sequence, use the [Azure coursework guide](docu
 It includes pre-commit hooks, commit SAST/dependency gates, a threat model and
 [labelled failure evidence exercises](documentation/EVIDENCE-CAPTURE.md).
 
+- [Demonstrate the pipeline: per-stage reports and every dashboard](documentation/PROFESSOR-DEMO.md)
 - [Pre-build security reports](documentation/PREBUILD-SECURITY-REPORTS.md) and [Nmap network acceptance](documentation/NMAP-ACCEPTANCE.md)
 - [Monitoring dashboards and Node Exporter](documentation/MONITORING-DEMO.md)
 - [Learn the implementation and prepare for interviews](documentation/LEARNING-AND-INTERVIEW.md)
