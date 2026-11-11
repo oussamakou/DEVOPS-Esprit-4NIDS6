@@ -24,9 +24,10 @@ Azure lane (`coursework.yml`) is kept for manual use; its successful run on 5 No
 - Each run generates random SonarQube and Nexus admin passwords (masked) and
   accepts the Nexus Community Edition EULA through its API, as the owner chose;
   the accepted disclaimer is saved in the report.
-- The runner's own interfaces are scanned by `security/nmap-policy-runner.json`:
-  nothing may be reachable on its network interface, and loopback may expose only
-  Grafana, the registry, the API and Prometheus.
+- `security/nmap-policy-runner.json` permits the hosted runner's SSH listener on
+  TCP 22 on both scan targets. Lab services must stay off the primary network
+  interface. The gate requires Grafana, the registry, the API and Prometheus on
+  loopback and blocks any other scanned open port.
 - Read-only anonymous browsing is enabled on SonarQube, Nexus and Grafana **inside
   the throwaway runner only**, so headless Chrome can capture real screenshots of
   each tool; they appear in the report's screenshot gallery. The Azure lane keeps

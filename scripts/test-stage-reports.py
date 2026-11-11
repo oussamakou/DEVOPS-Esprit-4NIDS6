@@ -424,13 +424,17 @@ class RunnerLaneTests(unittest.TestCase):
     def test_runner_policy_scans_only_this_runner(self):
         policy = nmap.load_policy(ROOT / "security/nmap-policy-runner.json")
         self.assertNotIn("private_scanner_hostname", policy)
-        self.assertEqual(policy["profiles"]["public"][0]["target"], "self")
+        interface = policy["profiles"]["public"][0]
+        self.assertEqual(interface["target"], "self")
+        self.assertEqual(interface["allowed_open"], [22])
+        self.assertEqual(interface["required_open"], [])
         loopback = policy["profiles"]["private"][0]
-        self.assertEqual((loopback["target"], loopback["allowed_open"]), ("127.0.0.1", [3000, 5000, 8089, 9091]))
-        self.assertNotIn(3306, loopback["allowed_open"])
+        self.assertEqual(loopback["target"], "127.0.0.1")
+        self.assertEqual(loopback["allowed_open"], [22, 3000, 5000, 8089, 9091])
+        self.assertEqual(loopback["required_open"], [3000, 5000, 8089, 9091])
         from unittest import mock
         with mock.patch.object(nmap, "primary_ipv4", return_value="10.1.0.4"):
-            self.assertEqual(nmap.resolve(policy["profiles"]["public"][0])["target"], "10.1.0.4")
+            self.assertEqual(nmap.resolve(interface)["target"], "10.1.0.4")
 
     def test_policy_without_pinned_scanner_may_not_scan_other_hosts_privately(self):
         with tempfile.TemporaryDirectory() as directory:
