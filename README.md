@@ -1,15 +1,10 @@
-# Azure DevSecOps: Spring Boot on Kubernetes
+# DevSecOps coursework: Spring Boot student management
 
-An Azure extension of the existing Esprit student-management project, with Terraform, a six-stage GitHub Actions security pipeline, k3s and Prometheus/Grafana.
+The coursework pipeline runs on GitHub-hosted runners and demonstrates Development, Acceptance, Production smoke testing, and Operations monitoring in a disposable Docker Compose lab.
 
-**Start with [the setup and project guide](documentation/START-HERE.md).**
+**Start with [the professor demo guide](documentation/PROFESSOR-DEMO.md)** for the current workflow and evidence. The [Azure coursework guide](documentation/COURSEWORK-PIPELINE.md) records the historical VM deployment and manual Azure workflow. The [setup and project guide](documentation/START-HERE.md) covers local and k3s setup.
 
-For the professor's checkout → Maven → SonarQube → Nexus → image → Azure Docker
-Compose → monitoring → email sequence, use the [Azure coursework guide](documentation/COURSEWORK-PIPELINE.md).
-It includes pre-commit hooks, commit SAST/dependency gates, a threat model and
-[labelled failure evidence exercises](documentation/EVIDENCE-CAPTURE.md).
-
-- [Demonstrate the pipeline: per-stage reports and every dashboard](documentation/PROFESSOR-DEMO.md)
+- [Final coursework report](documentation/FINAL-REPORT.pdf)
 - [Pre-build security reports](documentation/PREBUILD-SECURITY-REPORTS.md) and [Nmap network acceptance](documentation/NMAP-ACCEPTANCE.md)
 - [Monitoring dashboards and Node Exporter](documentation/MONITORING-DEMO.md)
 - [Learn the implementation and prepare for interviews](documentation/LEARNING-AND-INTERVIEW.md)

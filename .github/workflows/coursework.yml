@@ -161,7 +161,7 @@ jobs:
       id-token: write
     uses: ./.github/workflows/acceptance-nmap.yml
   monitoring:
-    name: 9 - Production - Monitoring with Prometheus and Grafana
+    name: 9 - Operations - Monitoring with Prometheus and Grafana
     needs: [delivery, acceptance]
     environment: azure-lab
     runs-on: ubuntu-24.04
@@ -207,9 +207,9 @@ jobs:
           path: monitoring-result.json
           retention-days: 30
   dependabot:
-    name: 10 - Production - Dependabot updates and alerts
+    name: 10 - Dependency maintenance - Dependabot updates and alerts
     needs: acceptance
-    # Production-phase report: findings are highlighted, not blocking. Runs even if the previous phase failed.
+    # Collect dependency maintenance evidence even when acceptance fails.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5

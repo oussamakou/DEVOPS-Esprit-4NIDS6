@@ -18,12 +18,12 @@ defaults:
     shell: bash
 jobs:
   security:
-    name: Security before Maven
+    name: Development - Security before Maven
     uses: ./.github/workflows/prebuild-security.yml
 
   pipeline:
     needs: security
-    name: Build, quality, artifact, image, deploy, acceptance and monitoring on the runner
+    name: Build, Acceptance, Production smoke and Operations on the runner
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     outputs:
@@ -121,9 +121,9 @@ jobs:
           python scripts/stage-facts.py .tools/reports/registry registry-push registry="localhost:5000 (registry:2.8.3 on the runner)" tag="$GITHUB_SHA" image="$image"
           echo "DEPLOY_IMAGE=$image" >> "$GITHUB_ENV"
           echo "image=$image" >> "$GITHUB_OUTPUT"
-      - name: 7 - Docker Compose deployment on the runner
+      - name: 7 - Acceptance - Start the Docker Compose lab
         run: |
-          python scripts/stage-facts.py .tools/reports/deploy compose-deploy image="$DEPLOY_IMAGE" target="disposable GitHub-hosted runner"
+          python scripts/stage-facts.py .tools/reports/deploy compose-deploy image="$DEPLOY_IMAGE" target="disposable Docker Compose acceptance lab"
           python scripts/capture-check.py compose-deploy .tools/reports/deploy -- python scripts/deploy-on-runner.py deploy "$DEPLOY_IMAGE"
       - name: 8 - Acceptance - Nmap against the runner's interface and loopback
         run: |
@@ -133,7 +133,11 @@ jobs:
             --policy security/nmap-policy-runner.json --view private --output .tools/reports/acceptance/private || true
           # The blocking decision re-reads the original Nmap XML, not the scan step's exit code.
           python scripts/nmap-acceptance.py combine --policy security/nmap-policy-runner.json --reports .tools/reports/acceptance
-      - name: 9 - Production - Monitoring with Prometheus and Grafana
+      - name: 9 - Production - Smoke-test the scanned digest and database-backed API
+        run: |
+          python scripts/stage-facts.py .tools/reports/production production-smoke image="$DEPLOY_IMAGE"
+          python scripts/capture-check.py production-smoke .tools/reports/production -- python scripts/deploy-on-runner.py smoke "$DEPLOY_IMAGE"
+      - name: 10 - Operations - Monitor with Prometheus and Grafana
         run: |
           python scripts/capture-check.py monitoring-check .tools/reports/monitoring -- python scripts/deploy-on-runner.py monitor "$DEPLOY_IMAGE"
           python scripts/capture-check.py prometheus-grafana .tools/reports/monitoring -- python scripts/runner-monitoring-evidence.py .tools/reports
@@ -157,9 +161,9 @@ jobs:
           retention-days: 30
 
   dependabot:
-    name: 10 - Production - Dependabot updates and alerts
+    name: 11 - Dependency maintenance - Dependabot updates and alerts
     needs: pipeline
-    # Production-phase report: findings are highlighted, not blocking. Runs even if the previous phase failed.
+    # Collect dependency maintenance evidence even when the runner job fails.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -219,7 +223,7 @@ jobs:
           retention-days: 30
 
   email:
-    name: 11 - Email notification
+    name: 12 - Email notification
     needs: [security, pipeline, dependabot, reports]
     if: always() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && vars.EMAIL_ENABLED == 'true'
     environment: azure-lab

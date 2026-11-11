@@ -13,8 +13,21 @@ remains the evidence of delivery to an Azure VM.
 | Push to | Workflow | Stages that run and report |
 | --- | --- | --- |
 | Pull request to `master` or push to `master` | `devsecops.yml` | Pre-commit replay, Semgrep, Gitleaks, Checkov, Trivy on the POM, Maven + tests + JaCoCo, image build, k3d smoke test, Trivy image gate, Dependabot report, combined report |
-| Pull request to `master` or push to `master` | `pipeline.yml` (GitHub-hosted, free) | The same security gates, then 2 Maven, 3 SonarQube with blocking gate, 4 Nexus publish and checksum verify, 5 image build and Trivy, 6 registry push by digest, 7 Docker Compose deployment, 8 Nmap acceptance, 9 monitoring with Prometheus and Grafana, 10 Dependabot, combined report, 11 email (master only) |
-| Manual only | `coursework.yml` (Azure) | The same sequence against the Azure VMs, when an Azure subscription is available again |
+| Pull request to `master` or push to `master` | `pipeline.yml` (GitHub-hosted, free) | Development gates, then Maven, SonarQube, Nexus, image scanning, registry push by digest, the Compose acceptance lab, Nmap, production smoke test, Operations monitoring, Dependabot, combined report, and email on `master` |
+| Manual only | `coursework.yml` (Azure) | The historical delivery workflow for the Azure VMs, when an Azure subscription is available again |
+
+## Course phases in the hosted lab
+
+| Phase | Evidence to show |
+| --- | --- |
+| Development | Manual STRIDE threat model, pre-commit hooks, Semgrep SAST, Gitleaks, Checkov, and Trivy dependency scanning before Maven compilation |
+| Acceptance | Build and scan the release artifact, start a disposable Compose test stack, and use Nmap to enforce the TCP exposure policy |
+| Production | After Nmap passes, verify the scanned digest on the running container and exercise the database-backed API. This is a smoke test on the same lab stack. |
+| Operations | Verify Prometheus scrapes and Grafana dashboards during the runner job, including both targets and sample API traffic |
+
+The hosted workflow demonstrates the four phases on one temporary stack. Dependabot
+reports dependency maintenance across the lifecycle. The status email links to the
+run. The Azure run above provides the historical VM deployment evidence.
 
 ### What the disposable lane does differently
 
@@ -62,12 +75,13 @@ Summary page, and each captured command also adds a line to its job summary.
 | Artifact | Nexus | `artifact/report.html` *(new)* | deploy log; checksum of the stored JAR compared with the tested JAR |
 | Image | Docker, k3d, Trivy | `image/report.html` *(new)* | build log, `trivy-image.json` |
 | Registry | Docker Distribution registry | `registry/report.html` | push log, immutable digest |
-| Deployment | Docker Compose on the runner | `deploy/report.html` | deployment log and running image verification |
+| Acceptance lab | Docker Compose on the runner | `deploy/report.html` | deployment log and readiness check |
 | Network acceptance | Nmap | `acceptance/report.html` | XML, `.nmap`, `.gnmap` |
-| Monitoring check | API request, scrape targets | `monitoring/report.html` | monitoring check log |
+| Production smoke test | Docker image inspection, database-backed API request | `production/report.html` | smoke test log and scanned digest. In the first hosted run, the digest and API checks are in `deploy/report.html`. |
+| Operations monitoring | API and scrape-target health checks | `monitoring/report.html` | monitoring check log |
 | Metrics collection | Prometheus, Node Exporter | `prometheus/report.html` *(new)* | targets, instant values, rule groups |
 | Dashboards | Grafana | `grafana/report.html` *(new)* | health, data sources, dashboards, panel data |
-| Dependency updates and alerts | Dependabot | `dependabot/report.html` *(new)* | open update PRs with change type, CI state and age; security alerts; configuration |
+| Dependency maintenance | Dependabot | `dependabot/report.html` | open update PRs, CI status, security alert status, and configuration |
 
 The Grafana page draws the dashboard's PromQL series from Prometheus
 `query_range` as SVG charts. They are labelled as Prometheus data and are **not**

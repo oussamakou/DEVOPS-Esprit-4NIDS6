@@ -3,11 +3,12 @@
   deploy  IMAGE  assemble .tools/runner-runtime from cloud/runtime and the provisioned dashboards,
                  generate private passwords, start the stack, start Node Exporter on the private
                  Docker bridge address, and verify a database-backed API request and the running digest
+  smoke   IMAGE  recheck the deployed digest and database-backed API after network acceptance
   monitor IMAGE  verify Prometheus scrapes the API and the runner exporter (UP) and Grafana is healthy
 
 IMAGE must be the immutable digest pushed to the runner's local registry. Like the Azure
-guest script (compose-on-vm.sh), success is only the final DEPLOY_SUCCEEDED marker; no
-secret or container environment is printed.
+guest script (compose-on-vm.sh), deployment emits a DEPLOY_SUCCEEDED marker.
+The smoke test emits PRODUCTION_SMOKE_PASSED after both checks succeed.
 """
 import json
 import os
@@ -82,6 +83,11 @@ def deploy(image):
     targets = [{"targets": [f"{gateway}:9100"], "labels": {"host": "github-runner", "role": "disposable-runner"}}]
     (RUNTIME / "node-targets/runner.json").write_text(json.dumps(targets, indent=2) + "\n", encoding="utf-8")
     print(f"Node Exporter listening on the private Docker bridge address {gateway}:9100 (not on the runner's network interface)")
+    verify_deployment(image)
+    print(f"DEPLOY_SUCCEEDED compose-deploy {image}")
+
+
+def verify_deployment(image):
     if not poll("API_READINESS", lambda: isinstance(get_json("http://127.0.0.1:8089/student/students/getAllStudents"), list)):
         raise SystemExit("API_READINESS_FAILED: 127.0.0.1:8089 did not return a database-backed JSON array")
     container = compose("ps", "-q", "app", capture=True).stdout.strip()
@@ -90,7 +96,11 @@ def deploy(image):
     if running != image:
         raise SystemExit(f"Running image {running} is not the scanned digest")
     print("API returned a database-backed JSON array; the running container uses the scanned digest")
-    print(f"DEPLOY_SUCCEEDED compose-deploy {image}")
+
+
+def smoke(image):
+    verify_deployment(image)
+    print(f"PRODUCTION_SMOKE_PASSED {image}")
 
 
 def monitor(image):
@@ -110,6 +120,7 @@ def monitor(image):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] not in ("deploy", "monitor") or not IMAGE.fullmatch(sys.argv[2]):
+    commands = {"deploy": deploy, "smoke": smoke, "monitor": monitor}
+    if len(sys.argv) != 3 or sys.argv[1] not in commands or not IMAGE.fullmatch(sys.argv[2]):
         raise SystemExit(__doc__)
-    (deploy if sys.argv[1] == "deploy" else monitor)(sys.argv[2])
+    commands[sys.argv[1]](sys.argv[2])

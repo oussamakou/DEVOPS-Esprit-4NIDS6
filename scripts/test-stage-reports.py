@@ -77,8 +77,20 @@ class RendererTests(unittest.TestCase):
             self.build_fixture(root)
             reports.render(root)
             self.assertEqual(reports.stage_status(root, "build"), "passed")
-            for stage in ("registry", "deploy", "monitoring", "acceptance", "sast"):
+            for stage in ("registry", "deploy", "monitoring", "acceptance", "production", "sast"):
                 self.assertEqual(reports.stage_status(root, stage), "not run in this snapshot", stage)
+
+    def test_production_smoke_evidence_is_linked_before_operations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write(root / "production/production-smoke-result.json", passed("production-smoke"))
+            write(root / "production/production-smoke.log", "PRODUCTION_SMOKE_PASSED")
+            reports.render(root)
+            index = (root / "index.html").read_text(encoding="utf-8")
+            self.assertLess(index.index("production/report.html"), index.index("Operations monitoring verification"))
+            page = (root / "production/report.html").read_text(encoding="utf-8")
+            self.assertIn("production-smoke: passed", page)
+            self.assertIn("PRODUCTION_SMOKE_PASSED", page)
 
     def test_stage_without_evidence_has_no_invented_measurement(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -269,11 +281,12 @@ class EmailIsTheLastStageTests(unittest.TestCase):
             self.assertEqual(email["environment"], "azure-lab", name)
             self.assertIn("JOB_RESULTS", email["steps"][-1]["env"], name)
 
-    def test_dependabot_is_a_reported_production_phase_in_both_pipelines(self):
+    def test_dependabot_reports_dependency_maintenance_in_all_workflows(self):
         import yaml
         for name, after in (("coursework", "acceptance"), ("devsecops", "trivy"), ("pipeline", "pipeline")):
             jobs = yaml.safe_load((ROOT / f".github/workflows/{name}.yml").read_text(encoding="utf-8"))["jobs"]
             job = jobs["dependabot"]
+            self.assertIn("Dependency maintenance", job["name"], name)
             self.assertEqual(job["needs"], after, name)
             self.assertEqual(job["permissions"].get("vulnerability-alerts"), "read", name)
             self.assertEqual(job["permissions"].get("contents"), "read", name)
@@ -417,7 +430,11 @@ class RunnerLaneTests(unittest.TestCase):
         self.assertEqual(set(triggers), {"push", "pull_request", "workflow_dispatch"})
         self.assertEqual(pipeline["jobs"]["pipeline"]["needs"], "security")
         numbered = [s["name"] for s in pipeline["jobs"]["pipeline"]["steps"] if s.get("name", "")[:1].isdigit()]
-        self.assertEqual([int(n.split(" ")[0]) for n in numbered], list(range(1, 10)))
+        self.assertEqual([int(n.split(" ")[0]) for n in numbered], list(range(1, 11)))
+        self.assertIn("Acceptance - Start the Docker Compose lab", numbered[6])
+        self.assertIn("Acceptance - Nmap", numbered[7])
+        self.assertIn("Production - Smoke-test", numbered[8])
+        self.assertIn("Operations - Monitor", numbered[9])
         coursework = self.workflow("coursework")
         self.assertEqual(set(coursework[True] if True in coursework else coursework["on"]), {"workflow_dispatch"})
 
@@ -472,6 +489,23 @@ class RunnerLaneTests(unittest.TestCase):
                 self.assertIn("GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer", (runtime / "runner-overrides.yml").read_text(encoding="utf-8"))
         self.assertFalse(deploy_runner.IMAGE.fullmatch("evil.example/student-management@sha256:" + "b" * 64))
 
+    def test_production_smoke_requires_both_the_api_and_scanned_digest(self):
+        from unittest import mock
+        expected = "localhost:5000/student-management@sha256:" + "b" * 64
+        with (mock.patch.object(deploy_runner, "poll", side_effect=lambda description, check: check()),
+              mock.patch.object(deploy_runner, "get_json", return_value=[]) as api,
+              mock.patch.object(deploy_runner, "compose", return_value=mock.Mock(stdout="app-container\n")),
+              mock.patch.object(deploy_runner.subprocess, "run", return_value=mock.Mock(stdout=expected + "\n")) as inspect):
+            deploy_runner.smoke(expected)
+            api.assert_called_once_with("http://127.0.0.1:8089/student/students/getAllStudents")
+            self.assertEqual(inspect.call_args.args[0][-1], "app-container")
+            inspect.return_value.stdout = expected[:-1] + "a\n"
+            with self.assertRaisesRegex(SystemExit, "is not the scanned digest"):
+                deploy_runner.smoke(expected)
+            api.return_value = {"status": "UP"}
+            with self.assertRaisesRegex(SystemExit, "API_READINESS_FAILED"):
+                deploy_runner.smoke(expected)
+
 
 final_report = load("final_report", "build-final-report.py")
 
@@ -494,7 +528,7 @@ class FinalReportTests(unittest.TestCase):
         for folder, _, _ in reports.STAGES:
             if folder in ("precommit", "sast", "secrets", "dependencies", "iac", "acceptance", "monitoring", "prometheus", "grafana", "dependabot"):
                 self.assertIn(folder + "/", listed, folder)
-        for folder in ("build", "quality", "artifact", "image", "registry", "deploy"):
+        for folder in ("build", "quality", "artifact", "image", "registry", "deploy", "production"):
             self.assertIn(folder + "/report.html", listed, folder)
 
     def test_report_states_what_is_still_unproven(self):

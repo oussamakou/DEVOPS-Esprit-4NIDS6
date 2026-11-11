@@ -26,14 +26,15 @@ STAGES = [
     ("artifact", "Artifact repository", "Nexus"),
     ("image", "Image build and vulnerability gate", "Docker, k3d smoke test, Trivy"),
     ("registry", "Image registry, deploy by digest", "OCI registry: ACR (Azure lane) or registry:2 (runner lane)"),
-    ("deploy", "Deployment", "Docker Compose: Azure VM via Run Command, or the GitHub runner"),
+    ("deploy", "Compose deployment", "Docker Compose: Azure VM via Run Command, or the runner acceptance lab"),
     ("acceptance", "Network acceptance", "Nmap"),
-    ("monitoring", "Monitoring verification", "API request, image and scrape-target check"),
+    ("production", "Production smoke test", "Docker image inspection, database-backed API request"),
+    ("monitoring", "Operations monitoring verification", "API request and monitoring health checks"),
     ("prometheus", "Metrics collection", "Prometheus, Node Exporter"),
     ("grafana", "Dashboards", "Grafana"),
     ("dependabot", "Dependency updates and security alerts", "Dependabot"),
 ]
-LATER_STAGES = {"build", "quality", "artifact", "image", "registry", "deploy", "acceptance", "monitoring", "prometheus", "grafana", "dependabot"}
+LATER_STAGES = {"build", "quality", "artifact", "image", "registry", "deploy", "acceptance", "production", "monitoring", "prometheus", "grafana", "dependabot"}
 # Stages whose evidence carries its own checks. Dependabot findings need attention but do not block delivery.
 EVIDENCE_STAGES = {"prometheus": "failed", "grafana": "failed", "dependabot": "attention"}
 CHART_COLORS = ["#075e91", "#b35900", "#116329", "#8250df"]
@@ -274,6 +275,7 @@ def render(folder):
             continue
         rows.append((result["check"], result["status"], str(result["exit_code"]), result["finished_utc"], path.relative_to(folder).as_posix()))
     jobs = json.loads(os.environ.get("SECURITY_JOB_RESULTS", "{}"))
+    hosted = "pipeline" in jobs or (folder / "production").is_dir()
     package_count = "not available"
     inventory = folder / "dependencies/inventory-summary.json"
     if inventory.exists():
@@ -302,7 +304,7 @@ def render(folder):
     measurements.update(monitoring_measurements(folder))
     dependabot = read_evidence(folder, "dependabot")
     measurements["dependabot"] = dependabot.get("summary", []) if dependabot else []
-    for name in ("artifact", "registry", "deploy", "monitoring"):
+    for name in ("artifact", "registry", "deploy", "production", "monitoring"):
         facts = read_facts(folder / name)
         for key in ("match", "snapshot_version", "image", "digest"):
             if key in facts:
@@ -315,7 +317,7 @@ def render(folder):
             links.append(("Nexus repository browser", f"{parsed.scheme}://{parsed.netloc}/#browse/browse:{repository.group(1)}"))
     # A disposable runner's 127.0.0.1 tools are gone after the run: keep only links a reader can still open.
     links = [(label, url) for label, url in links if urlparse(url).hostname not in ("127.0.0.1", "localhost")]
-    for name in ("build", "quality", "artifact", "image", "registry", "deploy", "monitoring"):
+    for name in ("build", "quality", "artifact", "image", "registry", "deploy", "production", "monitoring"):
         stats += measurements[name]
     stats += [f"Prometheus: {line}" for line in measurements["prometheus"]]
     stats += [f"Grafana: {line}" for line in measurements["grafana"]]
@@ -334,7 +336,11 @@ def render(folder):
     body = """<!doctype html><html lang="en"><meta charset="utf-8"><title>DevSecOps security reports</title>
 <style>body{font:17px/1.5 Arial,sans-serif;color:#172332;max-width:1100px;margin:40px auto;padding:0 24px}h1{font-size:32px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:10px;text-align:left}th{background:#eef3f7}a{color:#075e91}code{overflow-wrap:anywhere}li{margin:8px 0}.passed{color:#116329;font-weight:bold}.failed{color:#a40e26;font-weight:bold}.skip{color:#6a737d}.attention{color:#9a6700;font-weight:bold}.banner{background:#fff8c5;border:1px solid #d4a72c;padding:12px 16px}@media print{body{margin:0;font-size:12px}a{color:inherit}}</style>"""
     body += f"<h1>DevSecOps security reports</h1><p>Report execution revision: <code>{esc(head)}</code><br>Run: <a href='{esc(run)}'>{esc(run)}</a></p>"
-    body += "<p>Order: checkout, local-hook replay and commit security gates before Maven compilation; Nmap acceptance after deployment. Each original record retains its own execution time and provenance. Threat modeling remains a human review activity.</p>"
+    body += "<p>Development security checks run before Maven compilation. Each original record retains its execution time and provenance. Threat modeling is a human review activity.</p>"
+    if hosted:
+        body += ("<p>Acceptance starts the disposable Compose lab and checks its TCP exposure with Nmap. "
+                 "Production smoke testing verifies the scanned digest and database-backed API on that same stack. "
+                 "Operations monitoring samples the application and runner until the job ends.</p>")
     body += "<h2>Pipeline stages at a glance</h2><table><tr><th>Stage</th><th>Tool</th><th>Outcome</th><th>What it measured</th><th>Report</th></tr>"
     summary_rows = []
     for name, title, tools in STAGES:
@@ -370,7 +376,10 @@ def render(folder):
                         "</figcaption></figure>" for p in shots)
     if links:
         body += "<h2>Live tool dashboards for this run</h2><ul>" + "".join(f"<li><a href='{esc(url)}'>{esc(label)}</a> (sign-in required)</li>" for label, url in links) + "</ul>"
-    body += "<p>Grafana (<code>http://127.0.0.1:3000/d/student-devsecops</code>, <code>/d/student-vms</code>) and Prometheus (<code>http://127.0.0.1:9091/targets</code>) are private: open them through the owner's SSH tunnel described in documentation/MONITORING-DEMO.md.</p>"
+    if hosted:
+        body += "<p>The runner's dashboards stop when the job ends. The gallery and reports preserve their evidence.</p>"
+    elif (folder / "monitoring").is_dir():
+        body += "<p>Use the Azure SSH tunnel in documentation/MONITORING-DEMO.md to open the private dashboards while the VM is running.</p>"
     if jobs:
         body += "<h2>Security job outcomes</h2><ul>" + "".join(f"<li>{esc(name)}: {esc(value['result'])}</li>" for name, value in jobs.items()) + "</ul>"
     body += "<h2>Scanner measurements</h2><ul>" + "".join(f"<li>{esc(s)}</li>" for s in stats) + "</ul>"

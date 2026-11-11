@@ -154,9 +154,9 @@ jobs:
           retention-days: 14
 
   dependabot:
-    name: Production - Dependabot updates and alerts
+    name: Dependency maintenance - Dependabot updates and alerts
     needs: trivy
-    # Production-phase report: findings are highlighted, not blocking. Runs even if the previous phase failed.
+    # Collect dependency maintenance evidence even when the image scan fails.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
