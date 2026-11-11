@@ -103,8 +103,8 @@ CATALOG = [
                    ("report_grafana_run42108525318.png", "Grafana page: health, data source, both dashboards and panel data (run 42108525318)")]},
         {"id": "dependabot", "name": "Dependency updates and security alerts", "technique": "Continuous dependency maintenance: weekly version-update PRs for five ecosystems and GitHub's vulnerability alerts, collected into a report on every push",
          "tool": "Dependabot, GitHub REST API", "gate": "Reported, not blocking: disabled alerts, HIGH/CRITICAL alerts and failing update PRs are highlighted for attention", "report": "dependabot/report.html",
-         "status": "pending", "note": "A local run with the same script on 11 Nov 2026 found 13 open update PRs (8 major or variant changes, all passing CI, oldest 19 days) and Dependabot security alerts DISABLED on the repository. The CI job has not produced its report yet.",
-         "proof": []},
+         "status": "verified", "note": "The first CI run found 13 open update PRs (8 major or variant changes, all passing CI, oldest 19 days) and Dependabot security alerts DISABLED on the repository (GitHub answered HTTP 403, alerts disabled). Status is attention, not passed: enabling alerts is a repository setting for the owner.",
+         "proof": [("report_dependabot_run43047106961.png", "Dependabot stage page: alerts-disabled finding, 13 update PRs with major and variant changes highlighted (run 43047106961, pull request 27, 11 Nov 2026)")]},
     ]},
     {"phase": "F. Notification", "stages": [
         {"id": "email", "name": "Email notification", "technique": "Status, per-stage results and the run link sent at the end of every master run",

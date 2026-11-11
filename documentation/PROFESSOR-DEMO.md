@@ -2,7 +2,7 @@
 
 **Status:** the first live run on master (run 42108525318, 5 Nov 2026) produced every
 per-stage report, including Nexus, ACR, deployment, Prometheus and Grafana. The
-Dependabot report is newer and has not yet run in CI.
+Dependabot report first ran in CI in run 43047106961 (pull request 27, 11 Nov 2026).
 
 ## What happens on a push
 

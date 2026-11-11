@@ -402,8 +402,8 @@ class FinalReportTests(unittest.TestCase):
         for stage in stages:
             self.assertIn(stage["status"], final_report.STATUSES, stage["id"])
         pending = [s for s in stages if s["status"] == "pending"]
-        self.assertTrue(pending)
         self.assertTrue(all(not s["proof"] for s in pending), "a pending stage must not cite a screenshot")
+        self.assertTrue(all(s["proof"] for s in stages if s["status"] == "verified"), "a verified stage must cite proof")
 
     def test_every_report_page_the_renderer_creates_is_listed(self):
         listed = " ".join(s["report"] for phase in final_report.CATALOG for s in phase["stages"])
@@ -416,7 +416,10 @@ class FinalReportTests(unittest.TestCase):
     def test_report_states_what_is_still_unproven(self):
         text = final_report.build("test")
         self.assertIn("Not yet proven", text)
-        self.assertIn("Implemented, not yet run live", text)
+        self.assertTrue(final_report.PENDING_PROOF)
+        labels = {"verified": "Verified in a real run", "partial": "Partly verified", "pending": "Implemented, not yet run live"}
+        for status in {s["status"] for phase in final_report.CATALOG for s in phase["stages"]}:
+            self.assertIn(labels[status], text, status)
         self.assertIn("data:image/png;base64,", text)
 
 
