@@ -511,6 +511,54 @@ final_report = load("final_report", "build-final-report.py")
 
 
 class FinalReportTests(unittest.TestCase):
+    def test_tool_reports_add_one_outline_heading_each(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "evidence.zip"
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr("index.html", f"<a href='/actions/runs/{final_report.EVIDENCE_RUN}'>run</a>")
+                for folder, _ in final_report.TOOL_REPORTS:
+                    bundle.writestr(f"{folder}/report.html", f"<html><h1>{folder}: original evidence</h1><h2>{folder}.log</h2>"
+                                    f"<p>body</p><h3>runner-interface — 10.1.0.4</h3><pre>x</pre></html>")
+            appendix = final_report.tool_appendix(archive)
+        sections = re.findall(r"<section class='tool-report'.*?</section>", appendix, flags=re.DOTALL)
+        self.assertEqual(len(sections), len(final_report.TOOL_REPORTS))
+        for section in sections:
+            self.assertEqual(len(re.findall(r"<h[1-6]", section)), 1, section[:120])  # only the report title
+            self.assertIn("<p class='subhead h2'>", section)
+            self.assertIn("<p class='subhead h3'>", section)
+
+    def test_page_counter_is_dropped_when_pdfs_are_appended(self):
+        self.assertIn("counter(pages)", final_report.build("test"))
+        self.assertNotIn("counter(pages)", final_report.build("test", css_page_numbers=False))
+
+    def test_revision_stamp_does_not_claim_a_revision_missing_the_inputs(self):
+        from unittest import mock
+
+        def fake_git(dirty):
+            def run(command, **kwargs):
+                output = "abc1234" if "rev-parse" in command else (" M documentation/screenshots/new.png" if dirty else "")
+                return mock.Mock(stdout=output + "\n")
+            return run
+        with mock.patch.object(final_report.subprocess, "run", side_effect=fake_git(False)):
+            self.assertEqual(final_report.revision_label(), "from revision <code>abc1234</code>")
+        with mock.patch.object(final_report.subprocess, "run", side_effect=fake_git(True)):
+            label = final_report.revision_label()
+        self.assertIn("uncommitted changes to 1 report input", label)
+        self.assertIn("on top of revision <code>abc1234</code>", label)
+
+    def test_page_stamp_counts_every_page_of_the_combined_document(self):
+        try:
+            import pymupdf
+        except ImportError:
+            self.skipTest("PyMuPDF is only needed to combine appendices (requirements-report.txt)")
+        document = pymupdf.open()
+        for _ in range(3):
+            document.new_page()
+        final_report.stamp_page_numbers(document)
+        self.assertIn("Page 2 of 3", document[1].get_text())
+        self.assertIn("Page 3 of 3", document[2].get_text())
+
     def test_every_cited_screenshot_exists(self):
         missing = [n for n in final_report.referenced_files() if not (final_report.SHOTS / n).is_file()]
         self.assertEqual(missing, [])

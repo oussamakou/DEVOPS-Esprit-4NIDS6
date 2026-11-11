@@ -7,6 +7,12 @@ that every report page the renderer produces is listed.
 
 Usage: python scripts/build-final-report.py [--pdf] [--chrome PATH]
        [--tool-reports ARCHIVE] [--append-pdf PDF ...]
+
+Combining appendices needs PyMuPDF (pip install -r requirements-report.txt).
+For an exact revision stamp, commit the inputs (this script and the screenshots)
+first, then build, then commit the PDF on its own: the stamp then names the
+commit that holds every input. Otherwise the stamp says the inputs had
+uncommitted changes, instead of naming a revision that did not contain them.
 """
 import argparse
 import base64
@@ -183,6 +189,11 @@ def tool_appendix(archive):
             end = source.rindex("</html>")
             # Keep the original measurements and tables. Long logs remain complete in the ZIP.
             content = source[start:end].replace("<h1>", "<h3>", 1).replace("</h1>", "</h3>", 1)
+            # Only the report title stays a heading; inner headings (log names, checks) would
+            # otherwise flood the PDF outline. They keep their look as styled text.
+            title_end = content.index("</h3>") + len("</h3>")
+            content = content[:title_end] + re.sub(r"<(h[23])>(.*?)</\1>", r"<p class='subhead \1'>\2</p>",
+                                                    content[title_end:], flags=re.DOTALL)
             content = content.replace("href='../index.html'", "href='#tool-reports'")
             content = re.sub(r'href="(?:public|private)/[^"]+"', f'href="{EVIDENCE_ARTIFACT}"', content)
             content = re.sub(r"(<pre style='white-space:pre-wrap[^']*'>)(.*?)(</pre>)", excerpt_log, content, flags=re.DOTALL)
@@ -195,7 +206,30 @@ def tool_appendix(archive):
             f"<ul>{links}</ul></section>" + "\n".join(pages))
 
 
-def build(commit="unknown", archive=None, prior_reports=()):
+def revision_label(root=ROOT):
+    """Describe the revision honestly: name HEAD only when the report inputs are committed."""
+    def git(*args):
+        return subprocess.run(["git", *args], capture_output=True, text=True, cwd=root).stdout.strip()
+    head = git("rev-parse", "--short", "HEAD") or "unknown"
+    dirty = [line for line in git("status", "--porcelain", "--", "scripts/build-final-report.py", "documentation/screenshots").splitlines() if line]
+    if dirty:
+        return f"from the working tree on top of revision <code>{head}</code>, with uncommitted changes to {len(dirty)} report input(s)"
+    return f"from revision <code>{head}</code>"
+
+
+def stamp_page_numbers(document):
+    """One document-wide page number in the empty top-right margin of every page.
+
+    Appended historical PDFs keep their own footers, so the stamp goes at the top."""
+    import pymupdf
+    total = document.page_count
+    for number, page in enumerate(document, start=1):
+        label = f"Page {number} of {total}"
+        width = pymupdf.get_text_length(label, fontname="helv", fontsize=8)
+        page.insert_text((page.rect.width - 28 - width, 20), label, fontname="helv", fontsize=8, color=(0.29, 0.35, 0.42))
+
+
+def build(commit="unknown", archive=None, prior_reports=(), css_page_numbers=True, revision=None):
     esc = html.escape
     badge = {"verified": "Verified in a real run", "partial": "Partly verified", "pending": "Implemented, not yet run live"}
     out = ["<!doctype html><html lang='en'><meta charset='utf-8'><title>DevSecOps pipeline: final report</title>",
@@ -206,13 +240,15 @@ def build(commit="unknown", archive=None, prior_reports=()):
            ".stage{margin-top:26px}h3,h4{page-break-after:avoid}code{overflow-wrap:anywhere}"
            ".tool-report h2{font-size:14px;margin-top:16px}.tool-report pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:8.5px}"
            ".tool-report svg{max-width:100%;height:auto}.tool-report table{overflow-wrap:anywhere}"
-           "@page{size:A4;margin:10mm 10mm 14mm;@bottom-right{content:counter(page) ' / ' counter(pages);font:9px Arial,sans-serif;color:#495a6a}}"
+           + ("@page{size:A4;margin:10mm 10mm 14mm;@bottom-right{content:counter(page) ' / ' counter(pages);font:9px Arial,sans-serif;color:#495a6a}}"
+              if css_page_numbers else "@page{size:A4;margin:10mm 10mm 14mm}") +
+           ".tool-report p.subhead{font-weight:bold;margin:14px 0 4px}.tool-report p.subhead.h2{font-size:14px}.tool-report p.subhead.h3{font-size:12px}"
            "@media print{body{margin:0;max-width:none;font-size:11px}h2{page-break-after:avoid}table{table-layout:fixed;font-size:10px}tr{break-inside:avoid}td,th{padding:4px}"
            "figure{margin:9px 0 12px}figure img{display:block;max-height:176mm}figcaption{font-size:10px;margin-top:3px}"
            ".tool-index,.tool-report,.prior-reports{break-before:page}.tool-report svg{break-inside:avoid}}</style>",
            "<h1>DevSecOps pipeline: final report</h1>",
            f"<p>Oussama Koudhai · 4NIDS6, Esprit<br>Spring Boot student-management API<br><a href='{REPO}'>Project repository</a><br>"
-           f"Report built {date.today().isoformat()} from revision <code>{esc(commit)}</code>.</p>",
+           f"Report built {date.today().isoformat()} {revision or f'from revision <code>{esc(commit)}</code>'}.</p>",
            "<h2>First GitHub-hosted run on master</h2>",
            f"<p>The pipeline passed on 11 November 2026 after <a href='{REPO}/pull/28'>PR #28</a> merged. "
            "SonarQube, Nexus, the image registry, the Compose stack and monitoring all ran on the disposable GitHub-hosted runner. "
@@ -287,8 +323,11 @@ def main():
     if missing:
         raise SystemExit("Missing screenshots: " + ", ".join(missing))
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip() or "unknown"
+    combining = args.pdf and bool(args.append_pdf or args.tool_reports)
     target = ROOT / "documentation/FINAL-REPORT.html"
-    target.write_text(build(commit, args.tool_reports, args.append_pdf), encoding="utf-8")
+    # When PDFs are appended, Chrome's counter would only count the report's own pages.
+    target.write_text(build(commit, args.tool_reports, args.append_pdf, css_page_numbers=not combining,
+                            revision=revision_label()), encoding="utf-8")
     print(f"Wrote {target}")
     if args.pdf:
         pdf = ROOT / "documentation/FINAL-REPORT.pdf"
@@ -307,13 +346,15 @@ def main():
                 with pymupdf.open(draft) as report:
                     outline = report.get_toc()
                     for path in args.append_pdf:
-                        outline.append([1, path.stem, report.page_count + 1])
+                        # Nest each appended report under the "Appendix C" entry (level 2).
+                        outline.append([3, path.stem, report.page_count + 1])
                         with pymupdf.open(path) as historical:
                             report.insert_pdf(historical)
                     if args.tool_reports:
                         archive_name = f"devsecops-security-reports-{EVIDENCE_RUN}.zip"
                         report.embfile_add(archive_name, args.tool_reports.read_bytes(), filename=archive_name)
                     report.set_toc(outline)
+                    stamp_page_numbers(report)
                     report.save(combined, garbage=4, deflate=True)
                 draft = combined
             draft.replace(pdf)
