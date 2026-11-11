@@ -113,9 +113,13 @@ Grafana screenshots.
 
 ## Final report
 
-`documentation/FINAL-REPORT.pdf` lists every stage with its technique, tool, blocking
-condition, report location and screenshot proof, marks what is still unproven, and
-ends with the original Jenkins/Minikube screenshots. Rebuild it after capturing new
-screenshots with `python scripts/build-final-report.py --pdf`; the script refuses to
-run if a screenshot it cites is missing, and the tests stop a pending stage from
-citing proof it does not have.
+The [final coursework PDF](FINAL-REPORT.pdf) includes stage evidence, the verified
+commit-security email screenshot, 17 tool reports from the
+[course-aligned hosted run](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/43082725820),
+and the 29 October and 5 November assessment PDFs. Open the embedded ZIP to inspect
+the original logs, scanner data, and screenshots.
+
+To reproduce the complete PDF, download the [course-aligned evidence ZIP](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/43082725820/artifacts/13885372898)
+and pass it as `--tool-reports` to `python scripts/build-final-report.py --pdf`.
+Use `--append-pdf` once for each of the two historical PDFs. The full build needs
+Chrome and PyMuPDF. The PDF attachment also preserves the original ZIP.

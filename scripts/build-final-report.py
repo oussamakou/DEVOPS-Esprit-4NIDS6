@@ -6,14 +6,18 @@ does; test-stage-reports.py checks that every screenshot it cites exists and
 that every report page the renderer produces is listed.
 
 Usage: python scripts/build-final-report.py [--pdf] [--chrome PATH]
+       [--tool-reports ARCHIVE] [--append-pdf PDF ...]
 """
 import argparse
 import base64
 import html
 from pathlib import Path
+import re
 import subprocess
 import sys
+import tempfile
 from datetime import date
+from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOTS = ROOT / "documentation/screenshots"
@@ -23,6 +27,18 @@ HOSTED_RUN = "43076300738"
 HOSTED_ARTIFACT = f"{RUN}{HOSTED_RUN}/artifacts/13881273531"
 HOSTED_SHOT = f"hosted_run{HOSTED_RUN}_"
 AZURE_RUN = "42108525318"
+EVIDENCE_RUN = "43082725820"
+EVIDENCE_ARTIFACT = f"{RUN}{EVIDENCE_RUN}/artifacts/13885372898"
+TOOL_REPORTS = (
+    ("precommit", "Pre-commit and threat model"), ("sast", "Semgrep SAST"),
+    ("secrets", "Gitleaks"), ("dependencies", "Trivy dependencies and SBOM"),
+    ("iac", "Terraform and Checkov"), ("build", "Maven, Surefire and JaCoCo"),
+    ("quality", "SonarQube"), ("artifact", "Nexus"), ("image", "Docker and Trivy image scan"),
+    ("registry", "Registry and digest"), ("deploy", "Compose acceptance lab"),
+    ("acceptance", "Nmap"), ("production", "Production smoke test"),
+    ("monitoring", "Operations verification"), ("prometheus", "Prometheus and Node Exporter"),
+    ("grafana", "Grafana"), ("dependabot", "Dependabot"),
+)
 
 # status: verified = a real run produced it; partial = part verified; pending = implemented, not yet seen live.
 STATUSES = {"verified", "partial", "pending"}
@@ -116,13 +132,13 @@ CATALOG = [
          "proof": [("report_dependabot_run43047106961.png", "Dependabot stage page: alerts-disabled finding, 13 update PRs with major and variant changes highlighted (run 43047106961, pull request 27, 11 Nov 2026)")]},
         {"id": "email", "name": "Email notification", "technique": "Status, per-stage results and the run link sent at the end of every master run",
          "tool": "SMTP over STARTTLS", "gate": "Runs even after failure or cancellation", "report": "the email, and the job in the run graph",
-         "status": "partial", "note": "SMTP accepted the first hosted run's status message. The supplied inbox screenshot confirms receipt of the separate commit-security notification for run 43080079320. Receipt of the full hosted pipeline email remains unconfirmed.",
-         "proof": [("run_coursework_master_42108525318.png", "Historical Azure run with a successful email job (run 42108525318)")]},
+         "status": "verified", "note": "The inbox screenshot verifies receipt of the commit-security notification for run 43080079320. The course-aligned full pipeline run 43082725820 separately records SMTP acceptance for its status message.",
+         "proof": [("email_commit_security_run43080079320.png", "Inbox evidence for the commit-security notification (run 43080079320). The address header is obscured."),
+                   ("run_coursework_master_42108525318.png", "Historical Azure run with a successful email job (run 42108525318)")]},
     ]},
 ]
 
 PENDING_PROOF = [
-    "Receipt of the first GitHub-hosted status email in the configured inbox",
     "Dependabot security alerts are disabled on the repository: enable them, then the report will list real alert findings",
 ]
 LEGACY = [("screenshot1_getting_started.png", "Jenkins plugin installation"), ("screenshot2_dashboard.png", "Jenkins dashboard"),
@@ -146,7 +162,40 @@ def referenced_files():
     return {name for phase in CATALOG for stage in phase["stages"] for name, _ in stage["proof"]} | {name for name, _ in LEGACY}
 
 
-def build(commit="unknown"):
+def excerpt_log(match):
+    start, text, end = match.groups()
+    lines = text.splitlines()
+    if len(lines) <= 42:
+        return match[0]
+    gap = f"\n[Full log in the attached ZIP. {len(lines) - 32} lines omitted here.]\n"
+    return start + "\n".join(lines[:8]) + gap + "\n".join(lines[-24:]) + end
+
+
+def tool_appendix(archive):
+    with ZipFile(archive) as bundle:
+        if f"/actions/runs/{EVIDENCE_RUN}" not in bundle.read("index.html").decode("utf-8"):
+            raise ValueError(f"The tool report archive must come from GitHub Actions run {EVIDENCE_RUN}")
+        pages = []
+        for folder, title in TOOL_REPORTS:
+            path = f"{folder}/report.html"
+            source = bundle.read(path).decode("utf-8")
+            start = source.index("<h1>")
+            end = source.rindex("</html>")
+            # Keep the original measurements and tables. Long logs remain complete in the ZIP.
+            content = source[start:end].replace("<h1>", "<h3>", 1).replace("</h1>", "</h3>", 1)
+            content = content.replace("href='../index.html'", "href='#tool-reports'")
+            content = re.sub(r'href="(?:public|private)/[^"]+"', f'href="{EVIDENCE_ARTIFACT}"', content)
+            content = re.sub(r"(<pre style='white-space:pre-wrap[^']*'>)(.*?)(</pre>)", excerpt_log, content, flags=re.DOTALL)
+            pages.append(f"<section class='tool-report' id='report-{folder}'>{content}</section>")
+    links = "".join(f"<li><a href='#report-{folder}'>{html.escape(title)}</a></li>" for folder, title in TOOL_REPORTS)
+    return (f"<section class='tool-index' id='tool-reports'><h2>Appendix B. Tool reports from the hosted run</h2>"
+            f"<p>These are the original report pages from the <a href='{EVIDENCE_ARTIFACT}'>combined evidence archive</a> "
+            f"for <a href='{RUN}{EVIDENCE_RUN}'>run {EVIDENCE_RUN}</a>, with excerpts from long console logs. For the original JSON, XML, full logs and screenshots, "
+            "open the ZIP attached to this PDF or download it from GitHub.</p>"
+            f"<ul>{links}</ul></section>" + "\n".join(pages))
+
+
+def build(commit="unknown", archive=None, prior_reports=()):
     esc = html.escape
     badge = {"verified": "Verified in a real run", "partial": "Partly verified", "pending": "Implemented, not yet run live"}
     out = ["<!doctype html><html lang='en'><meta charset='utf-8'><title>DevSecOps pipeline: final report</title>",
@@ -155,9 +204,12 @@ def build(commit="unknown"):
            "figure{margin:14px 0;page-break-inside:avoid}img{max-width:100%;border:1px solid #bbb}figcaption{font-size:13px;color:#495a6a}"
            ".verified{color:#116329;font-weight:bold}.partial{color:#9a6700;font-weight:bold}.pending{color:#a40e26;font-weight:bold}"
            ".stage{margin-top:26px}h3,h4{page-break-after:avoid}code{overflow-wrap:anywhere}"
+           ".tool-report h2{font-size:14px;margin-top:16px}.tool-report pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:8.5px}"
+           ".tool-report svg{max-width:100%;height:auto}.tool-report table{overflow-wrap:anywhere}"
            "@page{size:A4;margin:10mm 10mm 14mm;@bottom-right{content:counter(page) ' / ' counter(pages);font:9px Arial,sans-serif;color:#495a6a}}"
            "@media print{body{margin:0;max-width:none;font-size:11px}h2{page-break-after:avoid}table{table-layout:fixed;font-size:10px}tr{break-inside:avoid}td,th{padding:4px}"
-           "figure{margin:9px 0 12px}figure img{display:block;max-height:176mm}figcaption{font-size:10px;margin-top:3px}}</style>",
+           "figure{margin:9px 0 12px}figure img{display:block;max-height:176mm}figcaption{font-size:10px;margin-top:3px}"
+           ".tool-index,.tool-report,.prior-reports{break-before:page}.tool-report svg{break-inside:avoid}}</style>",
            "<h1>DevSecOps pipeline: final report</h1>",
            f"<p>Oussama Koudhai · 4NIDS6, Esprit<br>Spring Boot student-management API<br><a href='{REPO}'>Project repository</a><br>"
            f"Report built {date.today().isoformat()} from revision <code>{esc(commit)}</code>.</p>",
@@ -172,7 +224,12 @@ def build(commit="unknown"):
            "<h2>How the lab maps to the course</h2><p>Development runs the early security checks. Acceptance builds the artifact, starts a disposable Compose test environment and checks TCP exposure with Nmap. "
            "Production smoke testing then verifies the scanned digest and database-backed API on that same stack. Operations uses Prometheus and Grafana while the lab is running. "
            "The job demonstrates these practices without a separate production promotion or an always-on service.</p>",
-           "<h2>Pipeline at a glance</h2><table><colgroup><col style='width:4%'><col style='width:13%'><col style='width:24%'><col style='width:15%'><col style='width:19%'><col style='width:12%'><col style='width:13%'></colgroup><thead><tr><th>#</th><th>Stage</th><th>Technique</th><th>Tool</th><th>Blocks the pipeline when</th><th>Report</th><th>Status</th></tr></thead><tbody>"]
+           ]
+    if archive:
+        out.append("<p><a href='#tool-reports'>Appendix B</a> contains the hosted tool reports and the original evidence ZIP.</p>")
+    if prior_reports:
+        out.append("<p><a href='#prior-reports'>Appendix C</a> contains the earlier standalone assessment PDFs.</p>")
+    out.append("<h2>Pipeline at a glance</h2><table><colgroup><col style='width:4%'><col style='width:13%'><col style='width:24%'><col style='width:15%'><col style='width:19%'><col style='width:12%'><col style='width:13%'></colgroup><thead><tr><th>#</th><th>Stage</th><th>Technique</th><th>Tool</th><th>Blocks the pipeline when</th><th>Report</th><th>Status</th></tr></thead><tbody>")
     number = 0
     for phase in CATALOG:
         out.append(f"<tr><th colspan='7'>{esc(phase['phase'])}</th></tr>")
@@ -205,8 +262,14 @@ def build(commit="unknown"):
     out.append(f"<h2>How to open the evidence</h2><p>From <a href='{HOSTED_ARTIFACT}'>the hosted run's artifacts</a>, download "
                "<strong>devsecops-security-reports</strong>, extract it and open <code>index.html</code>. "
                "The index links to stage reports, original measurements and the screenshot gallery. The runner and its services stop after the job.</p>")
-    out.append("<h2>Appendix: the original Jenkins and Minikube pipeline</h2><p>The project started with this school pipeline, preserved in documentation/LEGACY-JENKINS-MINIKUBE.md.</p>")
+    out.append("<h2>Appendix A. The original Jenkins and Minikube pipeline</h2><p>The project started with this school pipeline, preserved in documentation/LEGACY-JENKINS-MINIKUBE.md.</p>")
     out += [figure(name, caption) for name, caption in LEGACY]
+    if archive:
+        out.append(tool_appendix(archive))
+    if prior_reports:
+        out.append("<section class='prior-reports' id='prior-reports'><h2>Appendix C. Historical assessment PDFs</h2>"
+                   "<p>The following reports retain their original dates, pages and measurements.</p><ul>" +
+                   "".join(f"<li>{esc(path.stem)}</li>" for path in prior_reports) + "</ul></section>")
     out.append("</html>")
     return "\n".join(out)
 
@@ -215,20 +278,45 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pdf", action="store_true")
     parser.add_argument("--chrome", default="C:/Program Files/Google/Chrome/Application/chrome.exe")
+    parser.add_argument("--tool-reports", type=Path, help="Combined evidence ZIP from the course-aligned hosted run")
+    parser.add_argument("--append-pdf", type=Path, action="append", default=[], help="Historical PDF to append (repeatable)")
     args = parser.parse_args()
+    if args.append_pdf and not args.pdf:
+        parser.error("--append-pdf requires --pdf")
     missing = sorted(name for name in referenced_files() if not (SHOTS / name).is_file())
     if missing:
         raise SystemExit("Missing screenshots: " + ", ".join(missing))
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip() or "unknown"
     target = ROOT / "documentation/FINAL-REPORT.html"
-    target.write_text(build(commit), encoding="utf-8")
+    target.write_text(build(commit, args.tool_reports, args.append_pdf), encoding="utf-8")
     print(f"Wrote {target}")
     if args.pdf:
         pdf = ROOT / "documentation/FINAL-REPORT.pdf"
-        subprocess.run([args.chrome, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", f"--print-to-pdf={pdf}",
-                        target.as_uri()], capture_output=True, check=False)
-        if not pdf.is_file():
-            raise SystemExit("Chrome did not produce the PDF")
+        with tempfile.TemporaryDirectory(dir=pdf.parent) as directory:
+            work = Path(directory)
+            draft = work / "report.pdf"
+            subprocess.run([args.chrome, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
+                            "--generate-pdf-document-outline", f"--user-data-dir={work / 'chrome'}",
+                            f"--print-to-pdf={draft}", target.as_uri()], capture_output=True, check=True)
+            if not draft.is_file() or not draft.stat().st_size:
+                raise SystemExit("Chrome did not produce the PDF")
+            if args.append_pdf or args.tool_reports:
+                import pymupdf
+
+                combined = work / "combined.pdf"
+                with pymupdf.open(draft) as report:
+                    outline = report.get_toc()
+                    for path in args.append_pdf:
+                        outline.append([1, path.stem, report.page_count + 1])
+                        with pymupdf.open(path) as historical:
+                            report.insert_pdf(historical)
+                    if args.tool_reports:
+                        archive_name = f"devsecops-security-reports-{EVIDENCE_RUN}.zip"
+                        report.embfile_add(archive_name, args.tool_reports.read_bytes(), filename=archive_name)
+                    report.set_toc(outline)
+                    report.save(combined, garbage=4, deflate=True)
+                draft = combined
+            draft.replace(pdf)
         print(f"Wrote {pdf}")
 
 
