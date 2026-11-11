@@ -256,6 +256,138 @@ class EmailIsTheLastStageTests(unittest.TestCase):
             self.assertEqual(email["environment"], "azure-lab", name)
             self.assertIn("JOB_RESULTS", email["steps"][-1]["env"], name)
 
+    def test_dependabot_is_a_reported_production_phase_in_both_pipelines(self):
+        import yaml
+        for name, after in (("coursework", "acceptance"), ("devsecops", "trivy")):
+            jobs = yaml.safe_load((ROOT / f".github/workflows/{name}.yml").read_text(encoding="utf-8"))["jobs"]
+            job = jobs["dependabot"]
+            self.assertEqual(job["needs"], after, name)
+            self.assertEqual(job["permissions"].get("vulnerability-alerts"), "read", name)
+            self.assertEqual(job["permissions"].get("contents"), "read", name)
+            self.assertNotIn("write", job["permissions"].values(), name)
+            self.assertIn("dependabot", jobs["reports"]["needs"], name)
+            self.assertIn("dependabot-report.py", job["steps"][-2]["run"], name)
+            self.assertEqual(job["steps"][-1]["with"]["name"], "stage-dependabot", name)
+
+
+dependabot = load("dependabot", "dependabot-report.py")
+
+
+class FakeGitHub(http.server.BaseHTTPRequestHandler):
+    alerts_mode = "disabled"
+    pulls_status = 200
+
+    def reply(self, status, body):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(body).encode())
+
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path == "/repos/o/r/pulls":
+            if FakeGitHub.pulls_status != 200:
+                return self.reply(FakeGitHub.pulls_status, {"message": "Resource not accessible by integration"})
+            self.reply(200, [
+                {"number": 7, "title": "chore(deps): bump maven from 3.9.11-eclipse-temurin-17 to 3.9-eclipse-temurin-26",
+                 "head": {"ref": "dependabot/docker/maven-3.9-eclipse-temurin-26", "sha": "a1"}, "user": {"login": "dependabot[bot]"},
+                 "created_at": "2026-11-01T00:00:00Z", "html_url": "https://github.com/o/r/pull/7"},
+                {"number": 9, "title": "Bump actions/checkout from 4.4.0 to 7.0.1",
+                 "head": {"ref": "dependabot/github_actions/actions/checkout-7.0.1", "sha": "b2"}, "user": {"login": "dependabot[bot]"},
+                 "created_at": "2026-11-10T00:00:00Z", "html_url": "https://github.com/o/r/pull/9"},
+                {"number": 30, "title": "Human change", "head": {"ref": "feature", "sha": "c3"}, "user": {"login": "oussamakou"},
+                 "created_at": "2026-11-10T00:00:00Z", "html_url": "https://github.com/o/r/pull/30"}])
+        elif path == "/repos/o/r/commits/a1/check-runs":
+            self.reply(200, {"check_runs": [{"status": "completed", "conclusion": "success"}, {"status": "completed", "conclusion": "failure"}]})
+        elif path == "/repos/o/r/commits/b2/check-runs":
+            self.reply(200, {"check_runs": [{"status": "completed", "conclusion": "success"}, {"status": "completed", "conclusion": "skipped"}]})
+        elif path == "/repos/o/r/dependabot/alerts":
+            if FakeGitHub.alerts_mode == "disabled":
+                self.reply(403, {"message": "Dependabot alerts are disabled for this repository."})
+            else:
+                self.reply(200, [{"number": 1, "created_at": "2026-11-09T00:00:00Z", "html_url": "https://github.com/o/r/security/dependabot/1",
+                                  "dependency": {"package": {"ecosystem": "maven", "name": "com.fasterxml.jackson.core:jackson-databind"},
+                                                 "manifest_path": "pom.xml", "relationship": "transitive"},
+                                  "security_advisory": {"ghsa_id": "GHSA-xxxx-yyyy-zzzz", "cve_id": "CVE-2026-0001", "summary": "Fixture advisory"},
+                                  "security_vulnerability": {"severity": "high", "vulnerable_version_range": "< 2.21.7",
+                                                             "first_patched_version": {"identifier": "2.21.7"}}}])
+        else:
+            self.reply(404, {"message": "Not Found"})
+
+    def log_message(self, *args):
+        pass
+
+
+class DependabotReportTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server = http.server.HTTPServer(("127.0.0.1", 0), FakeGitHub)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.base = f"http://127.0.0.1:{cls.server.server_port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+
+    def setUp(self):
+        FakeGitHub.alerts_mode, FakeGitHub.pulls_status = "disabled", 200
+
+    def collect(self):
+        from datetime import datetime, timezone
+        return dependabot.collect("o/r", "token-value", self.base, ROOT / ".github/dependabot.yml",
+                                  now=datetime(2026, 11, 11, tzinfo=timezone.utc))
+
+    def test_update_types_including_docker_variant_changes(self):
+        cases = {("Bump a from 4.4.0 to 7.0.1", "major"), ("Bump a from 3.9.11 to 3.10.0", "minor"),
+                 ("Bump a from 0.8.11 to 0.8.15", "patch"), ("Bump a from 17-jre-alpine to 25-jre-alpine", "major"),
+                 ("Bump a from 3.9.11-eclipse-temurin-17 to 3.9-eclipse-temurin-26", "variant"), ("Bump a from latest to stable", "unknown")}
+        for title, kind in cases:
+            self.assertEqual(dependabot.parse_update(title, "dependabot/docker/x")["update_type"], kind, title)
+        self.assertEqual(dependabot.parse_update("Bump a from 1 to 2", "dependabot/github_actions/x")["ecosystem"], "github-actions")
+
+    def test_ci_state(self):
+        self.assertEqual(dependabot.ci_state([]), "no checks")
+        self.assertEqual(dependabot.ci_state([{"status": "in_progress"}]), "pending")
+        self.assertEqual(dependabot.ci_state([{"status": "completed", "conclusion": "timed_out"}]), "failing")
+        self.assertEqual(dependabot.ci_state([{"status": "completed", "conclusion": "neutral"}]), "passing")
+
+    def test_disabled_alerts_are_a_finding_not_zero_alerts(self):
+        evidence = self.collect()
+        self.assertEqual([u["number"] for u in evidence["update_pull_requests"]], [7, 9])  # human PR excluded
+        self.assertEqual(evidence["update_pull_requests"][0]["ci"], "failing")
+        self.assertEqual(evidence["update_pull_requests"][0]["age_days"], 10)
+        self.assertEqual(evidence["alerts"]["status"], "disabled")
+        unmet = {c["name"] for c in evidence["checks"] if c["required"] and not c["ok"]}
+        self.assertEqual(unmet, {"Dependabot security alerts enabled and readable", "No open HIGH/CRITICAL Dependabot alerts"})
+        self.assertIn("security alerts DISABLED", evidence["summary"])
+        self.assertNotIn("token-value", json.dumps(evidence))
+
+    def test_high_alert_is_reported_with_its_fix(self):
+        FakeGitHub.alerts_mode = "enabled"
+        evidence = self.collect()
+        alert = evidence["alerts"]["open"][0]
+        self.assertEqual((alert["severity"], alert["patched"], alert["ghsa"]), ("high", "2.21.7", "GHSA-xxxx-yyyy-zzzz"))
+        failed = {c["name"] for c in evidence["checks"] if c["required"] and not c["ok"]}
+        self.assertEqual(failed, {"No open HIGH/CRITICAL Dependabot alerts"})
+
+    def test_unreadable_pull_requests_fail_the_collection(self):
+        FakeGitHub.pulls_status = 403
+        with self.assertRaises(RuntimeError):
+            self.collect()
+
+    def test_report_highlights_dependabot_findings_without_failing_the_stage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "dependabot").mkdir()
+            (root / "dependabot/dependabot-evidence.json").write_text(json.dumps(self.collect()))
+            reports.render(root)
+            self.assertEqual(reports.stage_status(root, "dependabot"), "attention")
+            page = (root / "dependabot/report.html").read_text(encoding="utf-8")
+            self.assertIn("class='banner'", page)
+            self.assertIn("variant", page)
+            self.assertIn("class=failed>failing", page)
+            self.assertIn("class='attention'>attention", (root / "index.html").read_text(encoding="utf-8"))
+
 
 final_report = load("final_report", "build-final-report.py")
 
@@ -270,13 +402,13 @@ class FinalReportTests(unittest.TestCase):
         for stage in stages:
             self.assertIn(stage["status"], final_report.STATUSES, stage["id"])
         pending = [s for s in stages if s["status"] == "pending"]
-        self.assertTrue(pending)
         self.assertTrue(all(not s["proof"] for s in pending), "a pending stage must not cite a screenshot")
+        self.assertTrue(all(s["proof"] for s in stages if s["status"] == "verified"), "a verified stage must cite proof")
 
     def test_every_report_page_the_renderer_creates_is_listed(self):
         listed = " ".join(s["report"] for phase in final_report.CATALOG for s in phase["stages"])
         for folder, _, _ in reports.STAGES:
-            if folder in ("precommit", "sast", "secrets", "dependencies", "iac", "acceptance", "monitoring", "prometheus", "grafana"):
+            if folder in ("precommit", "sast", "secrets", "dependencies", "iac", "acceptance", "monitoring", "prometheus", "grafana", "dependabot"):
                 self.assertIn(folder + "/", listed, folder)
         for folder in ("build", "quality", "artifact", "image", "registry", "deploy"):
             self.assertIn(folder + "/report.html", listed, folder)
@@ -284,7 +416,10 @@ class FinalReportTests(unittest.TestCase):
     def test_report_states_what_is_still_unproven(self):
         text = final_report.build("test")
         self.assertIn("Not yet proven", text)
-        self.assertIn("Implemented, not yet run live", text)
+        self.assertTrue(final_report.PENDING_PROOF)
+        labels = {"verified": "Verified in a real run", "partial": "Partly verified", "pending": "Implemented, not yet run live"}
+        for status in {s["status"] for phase in final_report.CATALOG for s in phase["stages"]}:
+            self.assertIn(labels[status], text, status)
         self.assertIn("data:image/png;base64,", text)
 
 

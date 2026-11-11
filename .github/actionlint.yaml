@@ -1,0 +1,8 @@
+# actionlint configuration (read automatically from .github/).
+paths:
+  .github/workflows/**/*.yml:
+    ignore:
+      # GitHub documents `vulnerability-alerts: read` as the only GITHUB_TOKEN permission that can read
+      # Dependabot alerts (workflow syntax reference, "permissions"). actionlint up to 1.7.12 does not know
+      # this scope yet. Only this exact message is ignored; every other permission check still runs.
+      - 'unknown permission scope "vulnerability-alerts"'

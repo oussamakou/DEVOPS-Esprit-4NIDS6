@@ -18,12 +18,13 @@ No local VM, Vagrant or working Docker Desktop is needed.
 | 6. Deploy image | Publish the scanned image to Azure Container Registry and resolve its immutable digest |
 | 7. Docker Compose | Azure Run Command pulls that digest using the VM's managed identity and starts the application stack |
 | 8. Acceptance - Nmap | Reusable workflow `acceptance-nmap.yml`: scan the deployed VMs from an external runner and from inside Azure, and block on unexpected or missing open TCP ports ([details](NMAP-ACCEPTANCE.md)) |
-| 9. Monitoring | Verify the API/database request, actual running image, Prometheus targets UP (application and both VM exporters) and Grafana health |
+| 9. Production - Monitoring | Verify the API/database request, actual running image, Prometheus targets UP (application and both VM exporters) and Grafana health, then collect Prometheus and Grafana evidence |
+| 10. Production - Dependabot | Report Dependabot's open version-update PRs (major and variant changes, CI state, age) and its security alerts; findings are highlighted for attention, not blocking |
 | Security reports | Combine the pre-build and Nmap evidence into the `devsecops-security-reports` artifact; runs even after a failed gate |
-| 10. Email | Send the success/failure status and Actions URL via authenticated SMTP with STARTTLS |
+| 11. Email | Send the success/failure status and Actions URL via authenticated SMTP with STARTTLS |
 
 Stages 1 to 7 are named steps within the delivery job so they share the same
-tested artifact. Acceptance, monitoring, reports and email are separate jobs;
+tested artifact. Acceptance, monitoring, Dependabot, reports and email are separate jobs;
 email waits for the report package and can run after a delivery failure.
 Email is explicitly skipped until repository variable `EMAIL_ENABLED=true` is set.
 The workflow runs on every push to **master** and can also be dispatched manually

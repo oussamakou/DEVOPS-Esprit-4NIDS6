@@ -1,15 +1,15 @@
 # Demonstrating the pipeline: every push, every tool, every report
 
-**Status:** implemented and unit-tested offline (`scripts/test-stage-reports.py`).
-The first live run of the new per-stage reports is still to be done; until a run
-has completed, treat the parts marked *new* below as unverified in Azure.
+**Status:** the first live run on master (run 42108525318, 5 Nov 2026) produced every
+per-stage report, including Nexus, ACR, deployment, Prometheus and Grafana. The
+Dependabot report first ran in CI in run 43047106961 (pull request 27, 11 Nov 2026).
 
 ## What happens on a push
 
 | Push to | Workflow | Stages that run and report |
 | --- | --- | --- |
-| Any branch or pull request | `devsecops.yml` | Pre-commit replay, Semgrep, Gitleaks, Checkov, Trivy on the POM, Maven + tests + JaCoCo, image build, k3d smoke test, Trivy image gate, combined report |
-| `master` | the same, plus `coursework.yml` *(new trigger)* | All of the above, then SonarQube, Nexus, image build and scan, ACR, Docker Compose on Azure, Nmap, monitoring, Prometheus and Grafana evidence, combined report, email |
+| Any branch or pull request | `devsecops.yml` | Pre-commit replay, Semgrep, Gitleaks, Checkov, Trivy on the POM, Maven + tests + JaCoCo, image build, k3d smoke test, Trivy image gate, Dependabot report, combined report |
+| `master` | the same, plus `coursework.yml` *(new trigger)* | All of the above, then SonarQube, Nexus, image build and scan, ACR, Docker Compose on Azure, Nmap acceptance, then the production phase (monitoring, Prometheus and Grafana evidence, Dependabot), combined report, email |
 
 Every pipeline workflow ends with an **Email notification** job that waits for all
 other jobs and runs even after a failure or cancellation (`devsecops.yml` and
@@ -49,6 +49,7 @@ Summary page, and each captured command also adds a line to its job summary.
 | Monitoring check | API request, scrape targets | `monitoring/report.html` *(new)* | guest output |
 | Metrics collection | Prometheus, Node Exporter | `prometheus/report.html` *(new)* | targets, instant values, rule groups |
 | Dashboards | Grafana | `grafana/report.html` *(new)* | health, data sources, dashboards, panel data |
+| Dependency updates and alerts | Dependabot | `dependabot/report.html` *(new)* | open update PRs with change type, CI state and age; security alerts; configuration |
 
 The Grafana page draws the dashboard's PromQL series from Prometheus
 `query_range` as SVG charts. They are labelled as Prometheus data and are **not**
