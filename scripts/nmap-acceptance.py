@@ -14,6 +14,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_POLICY = ROOT / "security/nmap-policy.json"
 
 
 def policy_hash(policy):
@@ -44,7 +45,9 @@ def load_policy(path):
         if not profiles:
             raise ValueError("A scan viewpoint has no targets")
         for profile in profiles:
-            ipaddress.IPv4Address(profile["target"])
+            # "self" means this scanner's own primary IPv4 (used by the disposable GitHub-runner lane).
+            if profile["target"] != "self":
+                ipaddress.IPv4Address(profile["target"])
             name = profile["name"]
             if not re.fullmatch(r"[a-z]+(?:-[a-z]+)*", name) or name in names:
                 raise ValueError("Invalid or duplicate scan profile name")
@@ -52,7 +55,25 @@ def load_policy(path):
             allowed, required = set(profile["allowed_open"]), set(profile["required_open"])
             if not required <= allowed <= scanned:
                 raise ValueError("Expected open ports must be in the scanned policy scope")
+    # Without a pinned scanner host, the private view may only scan the scanner's own loopback.
+    if not policy.get("private_scanner_hostname") and not all(
+            p["target"] != "self" and ipaddress.IPv4Address(p["target"]).is_loopback for p in policy["profiles"]["private"]):
+        raise ValueError("A policy without private_scanner_hostname may only scan loopback privately")
     return policy
+
+
+def primary_ipv4():
+    """This host's primary IPv4. A UDP connect selects a route without sending any packet."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.connect(("192.0.2.1", 9))  # TEST-NET-1: documentation range, never contacted
+        address = probe.getsockname()[0]
+    if ipaddress.IPv4Address(address).is_loopback:
+        raise ValueError("Could not determine a non-loopback primary IPv4 for the 'self' target")
+    return address
+
+
+def resolve(profile):
+    return dict(profile, target=primary_ipv4()) if profile["target"] == "self" else profile
 
 
 def assess_xml(path, profile, ports):
@@ -99,21 +120,21 @@ def assess_xml(path, profile, ports):
             "aggregate_states": [dict(item.attrib) for item in aggregate]}
 
 
-def run_view(view, output, policy_path=ROOT / "security/nmap-policy.json"):
+def run_view(view, output, policy_path=DEFAULT_POLICY):
     policy = load_policy(policy_path)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     result = {"view": view, "started_utc": datetime.now(timezone.utc).isoformat(), "scanner_host": socket.gethostname(),
               "policy_sha256": policy_hash(policy), "ports": policy["ports"], "profiles": []}
     try:
-        if view == "private" and socket.gethostname().split(".")[0] != policy["private_scanner_hostname"]:
+        if view == "private" and policy.get("private_scanner_hostname") and socket.gethostname().split(".")[0] != policy["private_scanner_hostname"]:
             raise ValueError("Run private/loopback acceptance on the policy's application VM")
         binary = shutil.which("nmap")
         if not binary:
             raise RuntimeError("Nmap is not installed; install the operating system's nmap package")
         version = subprocess.run([binary, "--version"], capture_output=True, text=True, check=True, timeout=15).stdout
         (output / "nmap-version.txt").write_text(version, encoding="utf-8")
-        for profile in policy["profiles"][view]:
+        for profile in map(resolve, policy["profiles"][view]):
             prefix = output / profile["name"]
             command = [binary, "--unprivileged", "-sT", "-Pn", "-n", "-sV", "--version-light", "--reason", "-T3",
                        "--max-rate", "100", "--min-parallelism", "16", "--max-parallelism", "32",
@@ -138,15 +159,15 @@ def run_view(view, output, policy_path=ROOT / "security/nmap-policy.json"):
     return result
 
 
-def combine(folder):
+def combine(folder, policy_path=DEFAULT_POLICY):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
-    policy = load_policy(ROOT / "security/nmap-policy.json")
+    policy = load_policy(policy_path)
     results, sections = [], []
     for view in ("public", "private"):
         path = folder / view / "result.json"
         result = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"view": view, "status": "error", "error": "No scan result was produced", "profiles": []}
-        expected = {p["name"]: p for p in policy["profiles"][view]}
+        expected = {p["name"]: resolve(p) for p in policy["profiles"][view]}
         if result.get("view") != view or result.get("policy_sha256") != policy_hash(policy) or len(result.get("profiles", [])) != len(expected) or {p.get("name") for p in result.get("profiles", [])} != set(expected):
             result.update(status="error", error="Missing profiles or scan policy identity mismatch", profiles=[])
         else:
@@ -183,10 +204,10 @@ def combine(folder):
     (folder / "index.html").write_text('''<!doctype html><html lang="en"><meta charset="utf-8"><title>Nmap acceptance reports</title>
 <style>body{font:16px system-ui;margin:32px;max-width:1150px;color:#18283b}section{border:1px solid #bbb;padding:16px;margin:18px 0}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ddd;padding:6px;text-align:left}a{color:#1450a0}</style>
 <h1>Nmap acceptance: ''' + summary["status"].upper() + '''</h1>
-<p>Owned studentcourse Azure lab. TCP connect scans with light service detection; no exploit scripts.</p>
+<p>''' + html.escape(policy.get("description", "Owned studentcourse Azure lab.")) + ''' TCP connect scans with light service detection; no exploit scripts.</p>
 <p>Coverage: ''' + html.escape(policy["ports"]) + '''. Ports outside this list and UDP were not tested.
 Filtered means probes received no usable response from this viewpoint. A service version is an observation, not proof of a vulnerability.</p>
-<p>External runner: only tools HTTPS ports 443/8443 may be open; SSH is owner-only. Internal application-VM scans verify the private exporters and localhost application/monitoring endpoints.
+<p>''' + html.escape(policy.get("viewpoints", "External runner: only tools HTTPS ports 443/8443 may be open; SSH is owner-only. Internal application-VM scans verify the private exporters and localhost application/monitoring endpoints.")) + '''
 Required open ports provide positive controls; incomplete scans and missing reports fail acceptance.</p>''' + ''.join(sections) + '</html>', encoding='utf-8')
     return passed
 
@@ -197,15 +218,17 @@ if __name__ == "__main__":
     scan = commands.add_parser("scan")
     scan.add_argument("--view", choices=("public", "private"), required=True)
     scan.add_argument("--output", required=True)
+    scan.add_argument("--policy", default=str(DEFAULT_POLICY))
     collect = commands.add_parser("combine")
     collect.add_argument("--reports", required=True)
+    collect.add_argument("--policy", default=str(DEFAULT_POLICY))
     args = parser.parse_args()
     if args.command == "scan":
-        result = run_view(args.view, args.output)
+        result = run_view(args.view, args.output, args.policy)
         print(f"NMAP_ACCEPTANCE {args.view}: {result['status']}")
         for item in result["profiles"]:
             print(f"  {item['name']}: {item['status']}, open={item.get('open_ports', [])}, unexpected={item.get('unexpected_open', [])}, missing={item.get('missing_required', [])}")
         sys.exit(0 if result["status"] == "passed" else 1)
-    passed = combine(args.reports)
+    passed = combine(args.reports, args.policy)
     print('NMAP_ACCEPTANCE ' + ('PASSED' if passed else 'FAILED') + ': open the standalone index.html')
     sys.exit(0 if passed else 1)

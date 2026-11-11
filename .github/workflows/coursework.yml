@@ -1,7 +1,7 @@
 name: Coursework - SonarQube Nexus Compose
+# Azure lane: manual only since the Azure for Students subscription ended (Nov 2026).
+# Every master push now runs the full sequence on GitHub's runner (pipeline.yml).
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
 permissions:
   contents: read

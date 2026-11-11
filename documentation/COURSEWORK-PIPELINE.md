@@ -1,5 +1,11 @@
 # Azure coursework pipeline
 
+> **Since 11 Nov 2026 this Azure lane is manual-only:** the Azure for Students
+> subscription ended and the VMs are offline. Every master push runs the same
+> sequence on a free GitHub-hosted runner instead (`pipeline.yml`; see
+> [PROFESSOR-DEMO.md](PROFESSOR-DEMO.md)). This guide describes the Azure setup,
+> which was verified live in run 42108525318 on 5 Nov 2026.
+
 The coursework dashboard is GitHub Actions. All builds run on hosted Linux runners.
 The app, MySQL, Prometheus and Grafana run with Docker Compose on Azure, while
 SonarQube Community Build, PostgreSQL and Nexus run on a separate Azure tools VM.
