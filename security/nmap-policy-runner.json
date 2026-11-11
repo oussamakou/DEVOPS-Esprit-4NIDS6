@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "scope": "Disposable GitHub-hosted runner lane: the scanner scans only the runner it runs on",
+  "description": "Disposable GitHub-hosted runner environment, scanned by the runner itself and destroyed after the run.",
+  "viewpoints": "TCP 22 is allowed on both viewpoints for the hosted runner's SSH listener. The runner's primary IPv4 must expose no lab services. Loopback must expose Grafana (3000), the image registry (5000), the API (8089) and Prometheus (9091); MySQL, the management port and the build tools must stay closed.",
+  "ports": "1-1024,2375,2376,3000,3306,5000,5432,6443,8080,8081,8089,8443,9000,9090,9091,9100,10250,30089",
+  "profiles": {
+    "public": [
+      {"name": "runner-interface", "target": "self", "allowed_open": [22], "required_open": []}
+    ],
+    "private": [
+      {"name": "runner-loopback", "target": "127.0.0.1", "allowed_open": [22, 3000, 5000, 8089, 9091], "required_open": [3000, 5000, 8089, 9091]}
+    ]
+  }
+}

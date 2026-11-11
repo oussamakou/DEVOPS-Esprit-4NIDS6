@@ -96,12 +96,16 @@ def verify(base_url, jar_path, pom_path, username, password, attempts=3, delay=3
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
+    arguments = [a for a in sys.argv[1:] if a != "--allow-local-http"]
+    if len(arguments) != 4:
         raise SystemExit(__doc__)
-    url, jar, pom, report_dir = sys.argv[1:]
+    url, jar, pom, report_dir = arguments
     if not os.environ.get("NEXUS_USERNAME") or not os.environ.get("NEXUS_PASSWORD"):
         raise SystemExit("NEXUS_USERNAME and NEXUS_PASSWORD are required")
-    result = verify(url, jar, pom, os.environ["NEXUS_USERNAME"], os.environ["NEXUS_PASSWORD"])
+    # Plain HTTP is accepted only for a Nexus on this same machine (the disposable runner lane).
+    from urllib.parse import urlparse
+    local_http = "--allow-local-http" in sys.argv and urlparse(url).scheme == "http" and urlparse(url).hostname in ("localhost", "127.0.0.1")
+    result = verify(url, jar, pom, os.environ["NEXUS_USERNAME"], os.environ["NEXUS_PASSWORD"], require_https=not local_http)
     spec = importlib.util.spec_from_file_location("stage_facts", Path(__file__).with_name("stage-facts.py"))
     stage_facts = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(stage_facts)

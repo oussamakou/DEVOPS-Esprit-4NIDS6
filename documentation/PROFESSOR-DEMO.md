@@ -1,28 +1,45 @@
 # Demonstrating the pipeline: every push, every tool, every report
 
-**Status:** the first live run on master (run 42108525318, 5 Nov 2026) produced every
-per-stage report, including Nexus, ACR, deployment, Prometheus and Grafana. The
-Dependabot report first ran in CI in run 43047106961 (pull request 27, 11 Nov 2026).
+**Status (11 Nov 2026):** the Azure for Students subscription has ended, so the Azure
+VMs are offline. Every master push now runs the **whole** sequence on a free
+GitHub-hosted runner (`pipeline.yml`): SonarQube, Nexus, a registry, the deployed
+stack, Nmap, Prometheus and Grafana exist only for the duration of the run. The
+Azure lane (`coursework.yml`) is kept for manual use; its successful run on 5 Nov
+(42108525318) remains the evidence of the real cloud deployment.
 
 ## What happens on a push
 
 | Push to | Workflow | Stages that run and report |
 | --- | --- | --- |
-| Any branch or pull request | `devsecops.yml` | Pre-commit replay, Semgrep, Gitleaks, Checkov, Trivy on the POM, Maven + tests + JaCoCo, image build, k3d smoke test, Trivy image gate, Dependabot report, combined report |
-| `master` | the same, plus `coursework.yml` *(new trigger)* | All of the above, then SonarQube, Nexus, image build and scan, ACR, Docker Compose on Azure, Nmap acceptance, then the production phase (monitoring, Prometheus and Grafana evidence, Dependabot), combined report, email |
+| Any branch or pull request | `devsecops.yml` | Pre-commit replay, Semgrep, Gitleaks, Checkov, Trivy on the POM, Maven + tests + JaCoCo, image build, k3d smoke test, Trivy image gate, Dependabot report, combined report (these are the required checks on `master`) |
+| Pull request or `master` | `pipeline.yml` (GitHub-hosted, free) | The same security gates, then 2 Maven, 3 SonarQube with blocking gate, 4 Nexus publish and checksum verify, 5 image build and Trivy, 6 registry push by digest, 7 Docker Compose deployment, 8 Nmap acceptance, 9 monitoring with Prometheus and Grafana, 10 Dependabot, combined report, 11 email (master only) |
+| Manual only | `coursework.yml` (Azure) | The same sequence against the Azure VMs, when an Azure subscription is available again |
+
+### What the disposable lane does differently
+
+- It uses the lab's own files: `cloud/tools/compose.yml` for SonarQube and Nexus
+  (same versions as the Azure tools VM) and `cloud/runtime/compose.yml` for the
+  deployment. The image is pushed to a `registry:2` on the runner and deployed by
+  immutable digest, exactly as with ACR.
+- Each run generates random SonarQube and Nexus admin passwords (masked) and
+  accepts the Nexus Community Edition EULA through its API, as the owner chose;
+  the accepted disclaimer is saved in the report.
+- `security/nmap-policy-runner.json` permits the hosted runner's SSH listener on
+  TCP 22 on both scan targets. Lab services must stay off the primary network
+  interface. The gate requires Grafana, the registry, the API and Prometheus on
+  loopback and blocks any other scanned open port.
+- Read-only anonymous browsing is enabled on SonarQube, Nexus and Grafana **inside
+  the throwaway runner only**, so headless Chrome can capture real screenshots of
+  each tool; they appear in the report's screenshot gallery. The Azure lane keeps
+  authentication on.
+- Nothing persists after the run: there is no live URL to give the professor.
+  Show the run, its report and its screenshots.
 
 Every pipeline workflow ends with an **Email notification** job that waits for all
-other jobs and runs even after a failure or cancellation (`devsecops.yml` and
-`coursework.yml` on every master run, and the standalone Nmap workflow when it is
-dispatched). The message lists each stage's result and the run link. Pull requests
-and non-master runs send no email because they cannot read the environment secrets.
-A master push triggers both `devsecops.yml` and `coursework.yml`, so it sends two
-emails with different subjects.
-
-`coursework.yml` also stays manually dispatchable. Because it now runs on every
-push to `master`, merging a pull request deploys to the Azure lab VM and sends the
-status email. Pull requests never reach Azure. The `azure-lab` environment still
-limits deployment to `master`.
+other jobs and runs even after a failure or cancellation. The message lists each
+stage's result and the run link. Pull requests send no email. A master push runs
+both `devsecops.yml` and `pipeline.yml`, so it sends two emails with different
+subjects.
 
 ## Where each tool reports
 

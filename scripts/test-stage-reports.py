@@ -4,6 +4,7 @@ import http.server
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -211,6 +212,18 @@ class NexusTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             nexus.verify("http://nexus.example.test/", self.jar, self.pom, "ci", "x")
 
+    def test_local_http_exception_applies_only_to_this_machine(self):
+        FakeNexus.sha1 = hashlib.sha1(b"tested jar bytes").hexdigest()
+        env = dict(os.environ, NEXUS_USERNAME="ci", NEXUS_PASSWORD="secret-value")
+        script = str(ROOT / "scripts/nexus-artifact-report.py")
+        ok = subprocess.run([sys.executable, script, "--allow-local-http", self.url, str(self.jar), str(self.pom), str(self.root / "out")],
+                            env=env, capture_output=True, text=True)
+        self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+        self.assertNotIn("secret-value", ok.stdout + ok.stderr)
+        remote = subprocess.run([sys.executable, script, "--allow-local-http", "http://nexus.example.test/", str(self.jar), str(self.pom),
+                                 str(self.root / "out2")], env=env, capture_output=True, text=True)
+        self.assertNotEqual(remote.returncode, 0)
+
 
 notify = load("notify", "notify-pipeline.py")
 
@@ -243,7 +256,7 @@ class EmailNotificationTests(unittest.TestCase):
 class EmailIsTheLastStageTests(unittest.TestCase):
     def test_every_pipeline_workflow_ends_with_an_always_email_job(self):
         import yaml
-        for name in ("coursework", "devsecops", "acceptance-nmap"):
+        for name in ("coursework", "devsecops", "acceptance-nmap", "pipeline"):
             workflow = yaml.safe_load((ROOT / f".github/workflows/{name}.yml").read_text(encoding="utf-8"))
             jobs = workflow["jobs"]
             self.assertIn("email", jobs, name)
@@ -258,7 +271,7 @@ class EmailIsTheLastStageTests(unittest.TestCase):
 
     def test_dependabot_is_a_reported_production_phase_in_both_pipelines(self):
         import yaml
-        for name, after in (("coursework", "acceptance"), ("devsecops", "trivy")):
+        for name, after in (("coursework", "acceptance"), ("devsecops", "trivy"), ("pipeline", "pipeline")):
             jobs = yaml.safe_load((ROOT / f".github/workflows/{name}.yml").read_text(encoding="utf-8"))["jobs"]
             job = jobs["dependabot"]
             self.assertEqual(job["needs"], after, name)
@@ -387,6 +400,77 @@ class DependabotReportTests(unittest.TestCase):
             self.assertIn("variant", page)
             self.assertIn("class=failed>failing", page)
             self.assertIn("class='attention'>attention", (root / "index.html").read_text(encoding="utf-8"))
+
+
+nmap = load("nmap_acceptance", "nmap-acceptance.py")
+deploy_runner = load("deploy_runner", "deploy-on-runner.py")
+
+
+class RunnerLaneTests(unittest.TestCase):
+    def workflow(self, name):
+        import yaml
+        return yaml.safe_load((ROOT / f".github/workflows/{name}.yml").read_text(encoding="utf-8"))
+
+    def test_runner_lane_runs_every_stage_in_order_and_azure_lane_is_manual(self):
+        pipeline = self.workflow("pipeline")
+        triggers = pipeline[True] if True in pipeline else pipeline["on"]  # PyYAML reads the key `on` as True
+        self.assertEqual(set(triggers), {"push", "pull_request", "workflow_dispatch"})
+        self.assertEqual(pipeline["jobs"]["pipeline"]["needs"], "security")
+        numbered = [s["name"] for s in pipeline["jobs"]["pipeline"]["steps"] if s.get("name", "")[:1].isdigit()]
+        self.assertEqual([int(n.split(" ")[0]) for n in numbered], list(range(1, 10)))
+        coursework = self.workflow("coursework")
+        self.assertEqual(set(coursework[True] if True in coursework else coursework["on"]), {"workflow_dispatch"})
+
+    def test_runner_policy_scans_only_this_runner(self):
+        policy = nmap.load_policy(ROOT / "security/nmap-policy-runner.json")
+        self.assertNotIn("private_scanner_hostname", policy)
+        interface = policy["profiles"]["public"][0]
+        self.assertEqual(interface["target"], "self")
+        self.assertEqual(interface["allowed_open"], [22])
+        self.assertEqual(interface["required_open"], [])
+        loopback = policy["profiles"]["private"][0]
+        self.assertEqual(loopback["target"], "127.0.0.1")
+        self.assertEqual(loopback["allowed_open"], [22, 3000, 5000, 8089, 9091])
+        self.assertEqual(loopback["required_open"], [3000, 5000, 8089, 9091])
+        from unittest import mock
+        with mock.patch.object(nmap, "primary_ipv4", return_value="10.1.0.4"):
+            self.assertEqual(nmap.resolve(interface)["target"], "10.1.0.4")
+
+    def test_policy_without_pinned_scanner_may_not_scan_other_hosts_privately(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = json.loads((ROOT / "security/nmap-policy-runner.json").read_text(encoding="utf-8"))
+            data["profiles"]["private"][0]["target"] = "10.42.1.4"
+            path = Path(directory) / "policy.json"
+            path.write_text(json.dumps(data))
+            with self.assertRaises(ValueError):
+                nmap.load_policy(path)
+
+    def test_azure_policy_is_unchanged_and_still_pins_its_scanner(self):
+        policy = nmap.load_policy(ROOT / "security/nmap-policy.json")
+        self.assertEqual(policy["private_scanner_hostname"], "studentcourse-vm")
+
+    def test_screenshots_refuse_anything_but_the_runner_itself(self):
+        result = subprocess.run([sys.executable, str(ROOT / "scripts/capture-ui-screenshots.py"), tempfile.gettempdir(), "x",
+                                 "evil=https://example.com/"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be 127.0.0.1", result.stdout + result.stderr)
+
+    def test_runner_deployment_uses_the_lab_compose_and_private_passwords(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(deploy_runner, "RUNTIME", Path(directory) / "runtime"):
+                image = "localhost:5000/student-management@sha256:" + "b" * 64
+                deploy_runner.assemble(image)
+                runtime = Path(directory) / "runtime"
+                self.assertEqual((runtime / "compose.yml").read_text(encoding="utf-8"),
+                                 (ROOT / "cloud/runtime/compose.yml").read_text(encoding="utf-8"))
+                for name in ("prometheus.yml", "datasources.yml", "dashboards.yml", "vms.json", "student.json", "runner-overrides.yml"):
+                    self.assertTrue((runtime / name).is_file(), name)
+                env = (runtime / ".env").read_text(encoding="utf-8")
+                self.assertIn(f"APP_IMAGE={image}", env)
+                self.assertEqual(len([line for line in env.splitlines() if re.fullmatch(r"\w+_PASSWORD=[0-9a-f]{64}", line)]), 3)
+                self.assertIn("GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer", (runtime / "runner-overrides.yml").read_text(encoding="utf-8"))
+        self.assertFalse(deploy_runner.IMAGE.fullmatch("evil.example/student-management@sha256:" + "b" * 64))
 
 
 final_report = load("final_report", "build-final-report.py")

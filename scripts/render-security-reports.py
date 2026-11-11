@@ -25,8 +25,8 @@ STAGES = [
     ("quality", "Code quality gate", "SonarQube"),
     ("artifact", "Artifact repository", "Nexus"),
     ("image", "Image build and vulnerability gate", "Docker, k3d smoke test, Trivy"),
-    ("registry", "Image registry", "Azure Container Registry"),
-    ("deploy", "Deployment", "Docker Compose through Azure Run Command"),
+    ("registry", "Image registry, deploy by digest", "OCI registry: ACR (Azure lane) or registry:2 (runner lane)"),
+    ("deploy", "Deployment", "Docker Compose: Azure VM via Run Command, or the GitHub runner"),
     ("acceptance", "Network acceptance", "Nmap"),
     ("monitoring", "Monitoring verification", "API request, image and scrape-target check"),
     ("prometheus", "Metrics collection", "Prometheus, Node Exporter"),
@@ -313,6 +313,8 @@ def render(folder):
         repository = re.search(r"/repository/([^/]+)/", parsed.path)
         if repository:
             links.append(("Nexus repository browser", f"{parsed.scheme}://{parsed.netloc}/#browse/browse:{repository.group(1)}"))
+    # A disposable runner's 127.0.0.1 tools are gone after the run: keep only links a reader can still open.
+    links = [(label, url) for label, url in links if urlparse(url).hostname not in ("127.0.0.1", "localhost")]
     for name in ("build", "quality", "artifact", "image", "registry", "deploy", "monitoring"):
         stats += measurements[name]
     stats += [f"Prometheus: {line}" for line in measurements["prometheus"]]
@@ -359,6 +361,13 @@ def render(folder):
         body += f"<tr><td>{esc(title)}</td><td>{esc(tools)}</td><td class='{css}'>{esc(status)}</td><td>{esc(measured or '-')}</td><td>{link}</td></tr>"
         summary_rows.append(f"| {title} | {tools} | {status} | {measured or '-'} |")
     body += "</table>"
+    shots = sorted((folder / "screenshots").glob("*.png"))
+    if shots:
+        body += ("<h2>Screenshots of the live tools, captured by this run</h2><p>Taken with headless Chrome inside the "
+                 "disposable runner, of its own SonarQube, Nexus, Grafana, Prometheus and API (127.0.0.1 only).</p>")
+        body += "".join(f"<figure style='margin:18px 0'><a href='screenshots/{esc(p.name)}'><img src='screenshots/{esc(p.name)}' "
+                        f"alt='{esc(p.stem)}' style='max-width:100%;border:1px solid #bbb'></a><figcaption>{esc(p.stem.replace('-', ' '))}"
+                        "</figcaption></figure>" for p in shots)
     if links:
         body += "<h2>Live tool dashboards for this run</h2><ul>" + "".join(f"<li><a href='{esc(url)}'>{esc(label)}</a> (sign-in required)</li>" for label, url in links) + "</ul>"
     body += "<p>Grafana (<code>http://127.0.0.1:3000/d/student-devsecops</code>, <code>/d/student-vms</code>) and Prometheus (<code>http://127.0.0.1:9091/targets</code>) are private: open them through the owner's SSH tunnel described in documentation/MONITORING-DEMO.md.</p>"

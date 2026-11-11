@@ -1,0 +1,242 @@
+name: DevSecOps pipeline - GitHub-hosted
+# The whole delivery sequence on a free GitHub-hosted runner (4 CPU / 16 GB for public
+# repositories). SonarQube, Nexus, the registry and the deployed stack exist only for
+# the duration of the run. The Azure lane (coursework.yml) is kept for manual use.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hosted-pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  security:
+    name: Security before Maven
+    uses: ./.github/workflows/prebuild-security.yml
+
+  pipeline:
+    needs: security
+    name: Build, quality, artifact, image, deploy, acceptance and monitoring on the runner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    outputs:
+      image: ${{ steps.registry.outputs.image }}
+    steps:
+      - name: 1 - Checkout Git
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          server-id: nexus
+          server-username: NEXUS_USERNAME
+          server-password: NEXUS_PASSWORD
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Prepare the runner (helper dependency, disk space for the tool images)
+        run: |
+          pip install --disable-pip-version-check PyYAML==6.0.3
+          # Preinstalled SDKs this pipeline never uses; frees space for SonarQube, Nexus and the stack.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup
+          df -h /
+          free -h
+      - name: Generate per-run tool passwords (masked, never written to reports)
+        run: |
+          for name in SONAR_ADMIN_PASSWORD NEXUS_ADMIN_PASSWORD; do
+            value="Aa1-$(openssl rand -hex 20)"
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+      - name: Start SonarQube and Nexus (same Compose file and versions as the Azure tools VM)
+        run: python scripts/capture-check.py tools-start .tools/reports/quality -- python scripts/runner-tools.py start
+      - name: 2 - Compile Maven and run tests
+        run: python scripts/capture-check.py maven .tools/reports/build -- bash ./mvnw -B -ntp verify
+      - name: Keep the Surefire and JaCoCo reports
+        if: always()
+        run: |
+          mkdir -p .tools/reports/build
+          cp -r target/surefire-reports .tools/reports/build/ || echo "No Surefire reports were produced"
+          cp -r target/site/jacoco .tools/reports/build/ || echo "No JaCoCo report was produced"
+      - name: Install the image and network scanners after the pre-build security gates
+        run: |
+          python scripts/install-tools.py trivy
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nmap
+      - name: 3 - SonarQube analysis and blocking quality gate
+        run: |
+          python scripts/capture-check.py sonar-setup .tools/reports/quality -- python scripts/runner-tools.py sonar-setup .tools/reports/quality
+          token=$(cat .tools/runner-tools/sonar-token)
+          echo "::add-mask::$token"
+          SONAR_TOKEN="$token" python scripts/capture-check.py sonar .tools/reports/quality -- bash ./mvnw -B -ntp sonar:sonar \
+            -Dsonar.host.url=http://127.0.0.1:9000 -Dsonar.projectKey=student-management \
+            -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300
+          cp target/sonar/report-task.txt .tools/reports/quality/ || echo "No SonarQube task record was produced"
+          python scripts/capture-ui-screenshots.py .tools/reports/screenshots sonarqube \
+            "sonarqube-project-dashboard=http://127.0.0.1:9000/dashboard?id=student-management" \
+            "sonarqube-issues=http://127.0.0.1:9000/project/issues?id=student-management" \
+            || echo "SonarQube screenshot evidence incomplete (recorded in the report)"
+      - name: 4 - Nexus publish and verify the tested Maven artifact
+        env:
+          NEXUS_USERNAME: admin
+          NEXUS_PASSWORD: ${{ env.NEXUS_ADMIN_PASSWORD }}
+        run: |
+          python scripts/capture-check.py nexus-setup .tools/reports/artifact -- python scripts/runner-tools.py nexus-setup .tools/reports/artifact
+          python scripts/capture-check.py nexus-deploy .tools/reports/artifact -- bash ./mvnw -B -ntp org.apache.maven.plugins:maven-deploy-plugin:3.1.4:deploy-file \
+            -DrepositoryId=nexus -Durl=http://localhost:8081/repository/maven-snapshots/ -DpomFile=pom.xml \
+            -Dfile=target/student-management-0.0.1-SNAPSHOT.jar
+          python scripts/capture-check.py nexus-verify .tools/reports/artifact -- python scripts/nexus-artifact-report.py --allow-local-http \
+            http://localhost:8081/repository/maven-snapshots/ target/student-management-0.0.1-SNAPSHOT.jar pom.xml .tools/reports/artifact
+          python scripts/capture-ui-screenshots.py .tools/reports/screenshots nexus \
+            "nexus-maven-snapshots=http://127.0.0.1:8081/#browse/browse:maven-snapshots" \
+            || echo "Nexus screenshot evidence incomplete (recorded in the report)"
+          # The build tools are not part of the deployed system; free their memory for it.
+          python scripts/runner-tools.py stop
+      - name: 5 - Build image from the tested JAR and scan
+        run: |
+          python scripts/capture-check.py docker-build .tools/reports/image -- docker build --target ci --tag "student-management:$GITHUB_SHA" .
+          python scripts/stage-facts.py .tools/reports/image docker-build \
+            image="student-management:$GITHUB_SHA" \
+            image_id="$(docker image inspect --format '{{.Id}}' "student-management:$GITHUB_SHA")" \
+            size_bytes="$(docker image inspect --format '{{.Size}}' "student-management:$GITHUB_SHA")"
+          python scripts/capture-check.py trivy-image .tools/reports/image -- .tools/trivy image --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --format json --output .tools/reports/image/trivy-image.json "student-management:$GITHUB_SHA"
+      - name: 6 - Push to the runner's registry and resolve the immutable digest
+        id: registry
+        run: |
+          docker run -d --name registry -p 127.0.0.1:5000:5000 registry:2.8.3
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:5000/v2/ > /dev/null && break; sleep 1; done
+          docker tag "student-management:$GITHUB_SHA" "localhost:5000/student-management:$GITHUB_SHA"
+          python scripts/capture-check.py registry-push .tools/reports/registry -- docker push "localhost:5000/student-management:$GITHUB_SHA"
+          image=$(docker inspect --format '{{index .RepoDigests 0}}' "localhost:5000/student-management:$GITHUB_SHA")
+          [[ "$image" == "localhost:5000/student-management@sha256:"* ]]
+          python scripts/stage-facts.py .tools/reports/registry registry-push registry="localhost:5000 (registry:2.8.3 on the runner)" tag="$GITHUB_SHA" image="$image"
+          echo "DEPLOY_IMAGE=$image" >> "$GITHUB_ENV"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      - name: 7 - Docker Compose deployment on the runner
+        run: |
+          python scripts/stage-facts.py .tools/reports/deploy compose-deploy image="$DEPLOY_IMAGE" target="disposable GitHub-hosted runner"
+          python scripts/capture-check.py compose-deploy .tools/reports/deploy -- python scripts/deploy-on-runner.py deploy "$DEPLOY_IMAGE"
+      - name: 8 - Acceptance - Nmap against the runner's interface and loopback
+        run: |
+          python scripts/capture-check.py nmap-interface .tools/reports/acceptance -- python scripts/nmap-acceptance.py scan \
+            --policy security/nmap-policy-runner.json --view public --output .tools/reports/acceptance/public || true
+          python scripts/capture-check.py nmap-loopback .tools/reports/acceptance -- python scripts/nmap-acceptance.py scan \
+            --policy security/nmap-policy-runner.json --view private --output .tools/reports/acceptance/private || true
+          # The blocking decision re-reads the original Nmap XML, not the scan step's exit code.
+          python scripts/nmap-acceptance.py combine --policy security/nmap-policy-runner.json --reports .tools/reports/acceptance
+      - name: 9 - Production - Monitoring with Prometheus and Grafana
+        run: |
+          python scripts/capture-check.py monitoring-check .tools/reports/monitoring -- python scripts/deploy-on-runner.py monitor "$DEPLOY_IMAGE"
+          python scripts/capture-check.py prometheus-grafana .tools/reports/monitoring -- python scripts/runner-monitoring-evidence.py .tools/reports
+          python scripts/capture-ui-screenshots.py .tools/reports/screenshots monitoring \
+            "grafana-student-api-dashboard=http://127.0.0.1:3000/d/student-devsecops?orgId=1&kiosk&from=now-15m&to=now" \
+            "grafana-host-dashboard=http://127.0.0.1:3000/d/student-vms?orgId=1&kiosk&from=now-15m&to=now" \
+            "prometheus-targets=http://127.0.0.1:9091/targets" \
+            "swagger-api=http://127.0.0.1:8089/student/swagger-ui/index.html" \
+            || echo "Monitoring screenshot evidence incomplete (recorded in the report)"
+      - name: Container states on failure (no environment or secrets printed)
+        if: failure()
+        run: |
+          docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+          df -h /
+          free -h
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: stage-pipeline
+          path: .tools/reports/
+          retention-days: 30
+
+  dependabot:
+    name: 10 - Production - Dependabot updates and alerts
+    needs: pipeline
+    # Production-phase report: findings are highlighted, not blocking. Runs even if the previous phase failed.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      vulnerability-alerts: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Collect Dependabot configuration, open update PRs and security alerts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/capture-check.py dependabot .tools/reports/dependabot -- python scripts/dependabot-report.py .tools/reports/dependabot
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: stage-dependabot
+          path: .tools/reports/
+          retention-days: 30
+
+  reports:
+    name: DevSecOps security reports - all phases
+    needs: [security, pipeline, dependabot]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Collect pre-commit and commit evidence
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: professor-security-reports
+          path: .tools/reports
+      - name: Collect every later stage's evidence and screenshots
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: stage-*
+          merge-multiple: true
+          path: .tools/reports
+      - name: Generate the combined standalone report
+        env:
+          SECURITY_JOB_RESULTS: ${{ toJSON(needs) }}
+          SECURITY_REPORT_ARTIFACT: devsecops-security-reports
+        run: python3 scripts/render-security-reports.py .tools/reports
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: devsecops-security-reports
+          path: .tools/reports/
+          retention-days: 30
+
+  email:
+    name: 11 - Email notification
+    needs: [security, pipeline, dependabot, reports]
+    if: always() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && vars.EMAIL_ENABLED == 'true'
+    environment: azure-lab
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Send status, stage results and run link (success or failure)
+        env:
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          MAIL_FROM: ${{ vars.MAIL_FROM }}
+          MAIL_TO: ${{ vars.MAIL_TO }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_RESULT: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || contains(needs.*.result, 'skipped') && 'skipped' || 'success' }}
+          WORKFLOW_NAME: Full pipeline (GitHub-hosted)
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: python3 scripts/notify-pipeline.py
