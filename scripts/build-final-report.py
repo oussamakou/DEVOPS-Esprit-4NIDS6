@@ -19,6 +19,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SHOTS = ROOT / "documentation/screenshots"
 REPO = "https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6"
 RUN = REPO + "/actions/runs/"
+HOSTED_RUN = "43076300738"
+HOSTED_ARTIFACT = f"{RUN}{HOSTED_RUN}/artifacts/13881273531"
+HOSTED_SHOT = f"hosted_run{HOSTED_RUN}_"
+AZURE_RUN = "42108525318"
 
 # status: verified = a real run produced it; partial = part verified; pending = implemented, not yet seen live.
 STATUSES = {"verified", "partial", "pending"}
@@ -61,46 +65,46 @@ CATALOG = [
          "proof": [("report_maven_build_run42055245961.png", "Maven stage page: log, test counts and coverage (run 42055245961)")]},
         {"id": "sonar", "name": "Code quality gate", "technique": "Static analysis with a blocking quality gate",
          "tool": "SonarQube Community Build", "gate": "The pipeline waits for the gate and fails if it fails", "report": "quality/report.html",
-         "status": "verified", "note": "The gate passed in the first live master run. The 11 baseline issues, including six HIGH entity-binding findings, are still open: a passed new-code gate is not proof the code has no issues.",
-         "proof": [("report_sonarqube_quality_run42108525318.png", "Quality stage page: QUALITY GATE STATUS: PASSED and the dashboard link (run 42108525318, 5 Nov 2026)"),
+         "status": "verified", "note": "The blocking gate passed on the GitHub-hosted runner. The earlier Azure baseline recorded 11 issues, including six HIGH entity-binding findings.",
+         "proof": [(f"{HOSTED_SHOT}sonarqube-project-dashboard.png", f"SonarQube project dashboard on the hosted runner (run {HOSTED_RUN})"),
+                   (f"{HOSTED_SHOT}sonarqube-issues.png", f"SonarQube issue list for the same analysis (run {HOSTED_RUN})"),
                    ("sonarqube_first_baseline_findings.png", "First baseline: 41.5% coverage and 11 issues (run 39883066388)"),
-                   ("sonarqube_entity_binding_findings.png", "Six HIGH java:S4684 findings in the controllers, still open")]},
+                   ("sonarqube_entity_binding_findings.png", "Six HIGH java:S4684 findings in the controllers from the earlier Azure baseline")]},
         {"id": "nexus", "name": "Artifact repository", "technique": "Publish the tested JAR, then compare the stored checksum with the tested JAR",
          "tool": "Sonatype Nexus", "gate": "A different stored checksum fails the stage", "report": "artifact/report.html",
-         "status": "verified", "note": "The stored snapshot's SHA-1 equals the tested JAR's SHA-1.",
-         "proof": [("report_nexus_artifact_run42108525318.png", "Nexus stage page: local and remote SHA-1 identical, match true (run 42108525318)"),
+         "status": "verified", "note": "The hosted run's artifact report records matching SHA-1 checksums for the published snapshot and the tested JAR. The screenshot captured Nexus's sign-in screen when the runner opened the snapshot browser.",
+         "proof": [(f"{HOSTED_SHOT}nexus-maven-snapshots.png", f"Nexus sign-in screen captured while opening the snapshot browser (run {HOSTED_RUN})"),
                    ("nexus_default_encryption_key_before.png", "Earlier real finding: Nexus used the default encryption key"),
                    ("nexus_private_encryption_key_after.png", "After remediation with a private key")]},
-        {"id": "image", "name": "Image build and vulnerability gate", "technique": "Build a non-root image from the tested JAR, smoke-test it on ephemeral k3s, scan the final image",
-         "tool": "Docker, k3d, Trivy", "gate": "Any HIGH/CRITICAL finding fails, including unfixed ones", "report": "image/report.html",
+        {"id": "image", "name": "Image build and vulnerability gate", "technique": "Build a non-root image from the tested JAR and scan the final image. The parallel commit workflow also smoke-tests the image on ephemeral k3s.",
+         "tool": "Docker, Trivy, k3d", "gate": "Any HIGH/CRITICAL finding fails, including unfixed ones", "report": "image/report.html",
          "status": "verified", "note": "An earlier run was blocked by 11 HIGH/CRITICAL findings; see SECURITY-GATE-CASE-STUDY.md.",
          "proof": [("report_image_trivy_run42055245961.png", "Image stage page: build facts, k3s smoke test and Trivy result, 0 HIGH/CRITICAL (run 42055245961)")]},
     ]},
-    {"phase": "C. Delivery to Azure", "stages": [
-        {"id": "acr", "name": "Image registry", "technique": "Push the scanned image and deploy by immutable digest",
-         "tool": "Azure Container Registry, OIDC login", "gate": "The digest must belong to the pushed image", "report": "registry/report.html",
-         "status": "verified", "note": "A screenshot of the digest in the Azure portal is still to capture.",
-         "proof": [("report_acr_registry_run42108525318.png", "Registry stage page: push log and immutable sha256 digest (run 42108525318)")]},
-        {"id": "deploy", "name": "Deployment", "technique": "Docker Compose started on the app VM through Azure Run Command, pulling with the VM's managed identity",
-         "tool": "Azure Run Command, Docker Compose", "gate": "The guest must print DEPLOY_SUCCEEDED and a real database-backed API request must pass", "report": "deploy/report.html",
-         "status": "verified", "note": "The first run failed here and was repaired (COMPOSE-STARTUP-CASE-STUDY.md).",
-         "proof": [("report_compose_deploy_run42108525318.png", "Deployment stage page: DEPLOY_SUCCEEDED for the scanned digest (run 42108525318)"),
-                   ("coursework_first_compose_failure.png", "Real first failure at the Compose stage (run 39883066388)")]},
+    {"phase": "C. Delivery on the GitHub-hosted runner", "stages": [
+        {"id": "registry", "name": "Image registry", "technique": "Push the scanned image and deploy by immutable digest",
+         "tool": "Docker Distribution registry (runner loopback)", "gate": "The digest must belong to the pushed image", "report": "registry/report.html",
+         "status": "verified", "note": "The current run publishes to localhost:5000. Its report records the push log and digest. The screenshot below records the same technique on the earlier Azure registry.",
+         "proof": [("report_acr_registry_run42108525318.png", "Historical Azure registry push and immutable digest (run 42108525318)")]},
+        {"id": "deploy", "name": "Deployment", "technique": "Start the lab's Compose stack on the runner and verify the running image digest and database-backed API",
+         "tool": "Docker Compose, Spring Boot, MySQL", "gate": "The running image must match the scanned digest and a database-backed API request must pass", "report": "deploy/report.html",
+         "status": "verified", "note": "The Compose stack runs for the duration of the workflow. The current run recorded DEPLOY_SUCCEEDED and verified a database-backed API response.",
+         "proof": [(f"{HOSTED_SHOT}swagger-api.png", f"Swagger UI for the API deployed on the runner (run {HOSTED_RUN})"),
+                   ("coursework_first_compose_failure.png", "Historical Azure Compose startup failure, repaired before the later Azure run (run 39883066388)")]},
     ]},
     {"phase": "D. Acceptance", "stages": [
-        {"id": "nmap", "name": "Network acceptance", "technique": "Scoped TCP exposure test from outside and inside Azure against an allow-list",
+        {"id": "nmap", "name": "Network acceptance", "technique": "Scan the runner's primary IPv4 address and loopback against a TCP allowlist",
          "tool": "Nmap", "gate": "Unexpected open, missing required or incomplete scans fail", "report": "acceptance/report.html",
-         "status": "verified", "note": "UDP and ports outside the policy list are not tested.",
-         "proof": [("report_nmap_acceptance_run42016218929.png", "Acceptance PASSED with public and private viewpoints (run 42016218929)"),
-                   ("run_nmap_acceptance_success_42016218929.png", "The Nmap acceptance workflow run (42016218929)")]},
+         "status": "verified", "note": "The hosted run checks 1,041 TCP ports per target. The primary interface allows only the runner's OpenSSH listener. Loopback requires Grafana, the registry, the API and Prometheus, and also allows OpenSSH.",
+         "proof": [("report_nmap_acceptance_run42016218929.png", "Historical Azure acceptance from public and private viewpoints (run 42016218929)")]},
     ]},
     {"phase": "E. Production (after acceptance)", "stages": [
         {"id": "monitoring", "name": "Monitoring: Prometheus and Grafana", "technique": "Verify scrape targets, sample real queries after light API traffic, list provisioned dashboards",
-         "tool": "Prometheus, Node Exporter, Grafana", "gate": "API target and both host exporters UP, Grafana database healthy, both dashboards provisioned", "report": "monitoring/, prometheus/, grafana/ report.html",
-         "status": "verified", "note": "3 of 3 targets UP and 30/30 read-only requests in the run shown. The charts on the Grafana page are drawn from Prometheus data with the dashboards' PromQL; they are not Grafana screenshots.",
-         "proof": [("report_monitoring_check_run42108525318.png", "Monitoring check: API request, running image and scrape targets (run 42108525318)"),
-                   ("report_prometheus_run42108525318.png", "Prometheus page: targets UP and instant query values (run 42108525318)"),
-                   ("report_grafana_run42108525318.png", "Grafana page: health, data source, both dashboards and panel data (run 42108525318)")]},
+         "tool": "Prometheus, Node Exporter, Grafana", "gate": "API and runner exporter UP, Grafana database healthy, both dashboards provisioned", "report": "monitoring/, prometheus/, grafana/ report.html",
+         "status": "verified", "note": "The hosted run recorded both scrape targets UP and 30 successful read-only requests. The combined report includes the native metrics and the UI screenshots below.",
+         "proof": [(f"{HOSTED_SHOT}prometheus-targets.png", f"Prometheus targets for the application and runner exporter (run {HOSTED_RUN})"),
+                   (f"{HOSTED_SHOT}grafana-student-api-dashboard.png", f"Grafana dashboard for the student API (run {HOSTED_RUN})"),
+                   (f"{HOSTED_SHOT}grafana-host-dashboard.png", f"Grafana host dashboard showing the GitHub runner exporter (run {HOSTED_RUN})")]},
         {"id": "dependabot", "name": "Dependency updates and security alerts", "technique": "Continuous dependency maintenance: weekly version-update PRs for five ecosystems and GitHub's vulnerability alerts, collected into a report on every push",
          "tool": "Dependabot, GitHub REST API", "gate": "Reported, not blocking: disabled alerts, HIGH/CRITICAL alerts and failing update PRs are highlighted for attention", "report": "dependabot/report.html",
          "status": "verified", "note": "The first CI run found 13 open update PRs (8 major or variant changes, all passing CI, oldest 19 days) and Dependabot security alerts DISABLED on the repository (GitHub answered HTTP 403, alerts disabled). Status is attention, not passed: enabling alerts is a repository setting for the owner.",
@@ -109,17 +113,13 @@ CATALOG = [
     {"phase": "F. Notification", "stages": [
         {"id": "email", "name": "Email notification", "technique": "Status, per-stage results and the run link sent at the end of every master run",
          "tool": "SMTP over STARTTLS", "gate": "Runs even after failure or cancellation", "report": "the email, and the job in the run graph",
-         "status": "partial", "note": "The email job succeeded in every coursework run, including the first live master run. Receipt in the inbox is not yet shown.",
-         "proof": [("run_coursework_master_42108525318.png", "First live master run after the merge: every job green, ending with 10 - Email notification (run 42108525318)")]},
+         "status": "partial", "note": "The first hosted master run's email job succeeded and the SMTP server accepted the message. Inbox receipt remains unconfirmed.",
+         "proof": [("run_coursework_master_42108525318.png", "Historical Azure run with a successful email job (run 42108525318)")]},
     ]},
 ]
 
 PENDING_PROOF = [
-    "SonarQube dashboard for the current analysis (needs sign-in)",
-    "Nexus repository browser showing the stored JAR (needs sign-in)",
-    "Azure portal registry page showing the image digest",
-    "Prometheus targets page and both Grafana dashboards in the live UI (needs the SSH tunnel and the Grafana password)",
-    "The received status email in the inbox",
+    "Receipt of the first GitHub-hosted status email in the configured inbox",
     "Dependabot security alerts are disabled on the repository: enable them, then the report will list real alert findings",
 ]
 LEGACY = [("screenshot1_getting_started.png", "Jenkins plugin installation"), ("screenshot2_dashboard.png", "Jenkins dashboard"),
@@ -151,14 +151,22 @@ def build(commit="unknown"):
            "table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid #bbb;padding:7px;text-align:left;vertical-align:top}th{background:#eef3f7}"
            "figure{margin:14px 0;page-break-inside:avoid}img{max-width:100%;border:1px solid #bbb}figcaption{font-size:13px;color:#495a6a}"
            ".verified{color:#116329;font-weight:bold}.partial{color:#9a6700;font-weight:bold}.pending{color:#a40e26;font-weight:bold}"
-           ".stage{margin-top:26px}h3,h4{page-break-after:avoid}code{overflow-wrap:anywhere}@page{size:A4;margin:10mm}@media print{body{margin:0;max-width:none;font-size:11px}h2{page-break-after:avoid}table{table-layout:fixed;font-size:10px}td,th{padding:4px}}</style>",
+           ".stage{margin-top:26px}h3,h4{page-break-after:avoid}code{overflow-wrap:anywhere}"
+           "@page{size:A4;margin:10mm 10mm 14mm;@bottom-right{content:counter(page) ' / ' counter(pages);font:9px Arial,sans-serif;color:#495a6a}}"
+           "@media print{body{margin:0;max-width:none;font-size:11px}h2{page-break-after:avoid}table{table-layout:fixed;font-size:10px}tr{break-inside:avoid}td,th{padding:4px}"
+           "figure{margin:9px 0 12px}figure img{display:block;max-height:176mm}figcaption{font-size:10px;margin-top:3px}}</style>",
            "<h1>DevSecOps pipeline: final report</h1>",
-           f"<p>Student: Oussama Koudhai, 4NIDS6 (Esprit). Application: Spring Boot student-management API on Azure.<br>Repository: <a href='{REPO}'>{REPO}</a><br>"
+           f"<p>Oussama Koudhai · 4NIDS6, Esprit<br>Spring Boot student-management API<br><a href='{REPO}'>Project repository</a><br>"
            f"Report built {date.today().isoformat()} from revision <code>{esc(commit)}</code>.</p>",
-           "<p>Every push runs the stages below. Each tool leaves its own report (log, result record and measured values) in the run's artifact "
-           "<strong>devsecops-security-reports</strong>, and a status email is sent at the end of every master run. Screenshots are real captures of the runs and report pages cited under each image. "
-           "Where a screenshot does not exist yet, this report says so instead of showing a substitute.</p>",
-           "<h2>Pipeline at a glance</h2><table><colgroup><col style='width:4%'><col style='width:13%'><col style='width:24%'><col style='width:15%'><col style='width:19%'><col style='width:12%'><col style='width:13%'></colgroup><tr><th>#</th><th>Stage</th><th>Technique</th><th>Tool</th><th>Blocks the pipeline when</th><th>Report</th><th>Status</th></tr>"]
+           "<h2>First GitHub-hosted run on master</h2>",
+           f"<p>The pipeline passed on 11 November 2026 after <a href='{REPO}/pull/28'>PR #28</a> merged. "
+           "SonarQube, Nexus, the image registry, the Compose stack and monitoring all ran on the disposable GitHub-hosted runner. "
+           "Nmap acceptance passed, both Prometheus targets were UP, and all 30 sample API requests succeeded. "
+           f"The seven UI screenshots below come from this run. <a href='{RUN}{HOSTED_RUN}'>GitHub Actions run {HOSTED_RUN}</a> · "
+           f"<a href='{HOSTED_ARTIFACT}'>Combined report artifact</a></p>",
+           f"<p>The <a href='{RUN}{AZURE_RUN}'>5 November Azure run {AZURE_RUN}</a> remains the historical evidence for delivery to an Azure VM. "
+           "The Azure workflow is now manually triggered. The hosted workflow runs on pushes to <code>master</code> and pull requests targeting it.</p>",
+           "<h2>Pipeline at a glance</h2><table><colgroup><col style='width:4%'><col style='width:13%'><col style='width:24%'><col style='width:15%'><col style='width:19%'><col style='width:12%'><col style='width:13%'></colgroup><thead><tr><th>#</th><th>Stage</th><th>Technique</th><th>Tool</th><th>Blocks the pipeline when</th><th>Report</th><th>Status</th></tr></thead><tbody>"]
     number = 0
     for phase in CATALOG:
         out.append(f"<tr><th colspan='7'>{esc(phase['phase'])}</th></tr>")
@@ -167,7 +175,7 @@ def build(commit="unknown"):
             stage["number"] = number
             out.append(f"<tr><td>{number}</td><td>{esc(stage['name'])}</td><td>{esc(stage['technique'])}</td><td>{esc(stage['tool'])}</td>"
                        f"<td>{esc(stage['gate'])}</td><td><code>{esc(stage['report'])}</code></td><td class='{stage['status']}'>{esc(badge[stage['status']])}</td></tr>")
-    out.append("</table>")
+    out.append("</tbody></table>")
     out.append("<h2>Stage by stage, with proof</h2>")
     for phase in CATALOG:
         out.append(f"<h3>{esc(phase['phase'])}</h3>")
@@ -184,10 +192,13 @@ def build(commit="unknown"):
                "<li>Checkov rejected public HTTP port 80 (CKV_AZURE_160); the port was closed and the rescan passed (screenshots under Infrastructure-as-code policy).</li>"
                "<li>The first Compose deployment failed on a missing localhost port mapping and config file permissions; repaired and re-run (see Deployment).</li>"
                "<li>Nexus reported the default encryption key; replaced with a private key (see Artifact repository).</li>"
-               "<li>SonarQube reported six HIGH entity-binding findings. They are recorded and still open.</li></ul>")
+               f"<li>The <a href='{RUN}43067552466'>first hosted PR run</a> stopped at Nmap when it detected the runner's OpenSSH listener. "
+               "The runner policy now allows TCP 22 and continues to enforce loopback-only access for lab services.</li>"
+               "<li>The historical Azure SonarQube baseline recorded six HIGH entity-binding findings.</li></ul>")
     out.append("<h2>Not yet proven (to capture)</h2><ul>" + "".join(f"<li>{esc(item)}</li>" for item in PENDING_PROOF) + "</ul>")
-    out.append("<h2>How to open everything</h2><p>See documentation/PROFESSOR-DEMO.md: the Actions run and its artifacts, the SonarQube and Nexus links in the report, "
-               "and the SSH tunnel for Prometheus (<code>http://127.0.0.1:9091/targets</code>) and Grafana (<code>http://127.0.0.1:3000/d/student-devsecops</code>).</p>")
+    out.append(f"<h2>How to open the evidence</h2><p>From <a href='{HOSTED_ARTIFACT}'>the hosted run's artifacts</a>, download "
+               "<strong>devsecops-security-reports</strong>, extract it and open <code>index.html</code>. "
+               "The index links to stage reports, original measurements and the screenshot gallery. The runner and its services stop after the job.</p>")
     out.append("<h2>Appendix: the original Jenkins and Minikube pipeline</h2><p>The project started with this school pipeline, preserved in documentation/LEGACY-JENKINS-MINIKUBE.md.</p>")
     out += [figure(name, caption) for name, caption in LEGACY]
     out.append("</html>")

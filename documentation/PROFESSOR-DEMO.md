@@ -4,15 +4,16 @@
 VMs are offline. Every master push now runs the **whole** sequence on a free
 GitHub-hosted runner (`pipeline.yml`): SonarQube, Nexus, a registry, the deployed
 stack, Nmap, Prometheus and Grafana exist only for the duration of the run. The
-Azure lane (`coursework.yml`) is kept for manual use; its successful run on 5 Nov
-(42108525318) remains the evidence of the real cloud deployment.
+Azure workflow (`coursework.yml`) is kept for manual use. The
+[5 November Azure run](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/42108525318)
+remains the evidence of delivery to an Azure VM.
 
 ## What happens on a push
 
 | Push to | Workflow | Stages that run and report |
 | --- | --- | --- |
-| Any branch or pull request | `devsecops.yml` | Pre-commit replay, Semgrep, Gitleaks, Checkov, Trivy on the POM, Maven + tests + JaCoCo, image build, k3d smoke test, Trivy image gate, Dependabot report, combined report (these are the required checks on `master`) |
-| Pull request or `master` | `pipeline.yml` (GitHub-hosted, free) | The same security gates, then 2 Maven, 3 SonarQube with blocking gate, 4 Nexus publish and checksum verify, 5 image build and Trivy, 6 registry push by digest, 7 Docker Compose deployment, 8 Nmap acceptance, 9 monitoring with Prometheus and Grafana, 10 Dependabot, combined report, 11 email (master only) |
+| Pull request to `master` or push to `master` | `devsecops.yml` | Pre-commit replay, Semgrep, Gitleaks, Checkov, Trivy on the POM, Maven + tests + JaCoCo, image build, k3d smoke test, Trivy image gate, Dependabot report, combined report |
+| Pull request to `master` or push to `master` | `pipeline.yml` (GitHub-hosted, free) | The same security gates, then 2 Maven, 3 SonarQube with blocking gate, 4 Nexus publish and checksum verify, 5 image build and Trivy, 6 registry push by digest, 7 Docker Compose deployment, 8 Nmap acceptance, 9 monitoring with Prometheus and Grafana, 10 Dependabot, combined report, 11 email (master only) |
 | Manual only | `coursework.yml` (Azure) | The same sequence against the Azure VMs, when an Azure subscription is available again |
 
 ### What the disposable lane does differently
@@ -60,10 +61,10 @@ Summary page, and each captured command also adds a line to its job summary.
 | Quality gate | SonarQube | `quality/report.html` *(new)* | `sonar.log`, `report-task.txt`, dashboard link |
 | Artifact | Nexus | `artifact/report.html` *(new)* | deploy log; checksum of the stored JAR compared with the tested JAR |
 | Image | Docker, k3d, Trivy | `image/report.html` *(new)* | build log, `trivy-image.json` |
-| Registry | Azure Container Registry | `registry/report.html` *(new)* | push log, immutable digest |
-| Deployment | Docker Compose via Run Command | `deploy/report.html` *(new)* | guest output |
+| Registry | Docker Distribution registry | `registry/report.html` | push log, immutable digest |
+| Deployment | Docker Compose on the runner | `deploy/report.html` | deployment log and running image verification |
 | Network acceptance | Nmap | `acceptance/report.html` | XML, `.nmap`, `.gnmap` |
-| Monitoring check | API request, scrape targets | `monitoring/report.html` *(new)* | guest output |
+| Monitoring check | API request, scrape targets | `monitoring/report.html` | monitoring check log |
 | Metrics collection | Prometheus, Node Exporter | `prometheus/report.html` *(new)* | targets, instant values, rule groups |
 | Dashboards | Grafana | `grafana/report.html` *(new)* | health, data sources, dashboards, panel data |
 | Dependency updates and alerts | Dependabot | `dependabot/report.html` *(new)* | open update PRs with change type, CI state and age; security alerts; configuration |
@@ -72,37 +73,18 @@ The Grafana page draws the dashboard's PromQL series from Prometheus
 `query_range` as SVG charts. They are labelled as Prometheus data and are **not**
 Grafana screenshots.
 
-## Open every dashboard
+## Open the hosted run and screenshots
 
-1. **GitHub Actions run:** repository **Actions** tab, then the run. The Summary
-   shows the stage graph, the stage table and the downloadable artifacts.
-2. **SonarQube:** the link in the report's "Live tool dashboards" list (the
-   `SONAR_HOST_URL` variable). Sign-in is required.
-3. **Nexus:** the repository-browser link in the same list. Sign-in is required.
-4. **Prometheus and Grafana** are private to the app VM. Open the SSH tunnel
-   from your workstation, as in [MONITORING-DEMO.md](MONITORING-DEMO.md):
-
-   ```powershell
-   powershell -NoProfile -File C:\Users\oussa\.ssh\student-course-open-dashboards.ps1
-   ```
-
-   Then open `http://127.0.0.1:9091/targets` (Prometheus),
-   `http://127.0.0.1:3000/d/student-devsecops` and
-   `http://127.0.0.1:3000/d/student-vms` (Grafana). The tunnel needs the app VM
-   running and your current public IP allowed by the SSH rule. The Grafana
-   password is in your private `.ssh/student-course-credentials.md`; do not show it.
-5. **Azure portal:** the container registry's repository page shows the pushed digest.
-6. **Email:** the status message links back to the run.
-
-## Screenshots
-
-| Screenshot | Status |
-| --- | --- |
-| Actions run graphs (coursework run 40899036172, Nmap run 42016218929, master run 42020639183) | Captured, `documentation/screenshots/run_*.png` |
-| SonarQube first baseline, Nexus encryption key, Compose failure, Checkov failed and passed | Captured earlier, see `EVIDENCE-CAPTURE.md` |
-| SonarQube dashboard, Nexus repository, ACR digest, received email | To capture: they need your sign-in |
-| Prometheus targets, Grafana dashboards under traffic | To capture: they need the SSH tunnel and your Grafana password |
-| The new `index.html` and per-stage pages | To capture after the first successful run on `master` |
+1. Open the [first GitHub-hosted run on `master`](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/43076300738).
+   The Summary shows the job graph and stage results.
+2. Download the [combined report artifact](https://github.com/oussamakou/DEVOPS-Esprit-4NIDS6/actions/runs/43076300738/artifacts/13881273531)
+   and open `index.html`. Its gallery contains seven screenshots covering SonarQube,
+   Nexus, Prometheus, both Grafana dashboards and Swagger. The Nexus capture
+   shows its sign-in screen. Open `artifact/report.html` for the verified
+   snapshot checksum. The tools stop when the runner job ends.
+3. Open the [final coursework report](FINAL-REPORT.pdf) for a printable copy
+   with the screenshots. [Monitoring demo](MONITORING-DEMO.md) documents the
+   SSH tunnel for the historical Azure setup.
 
 ## Limits to state honestly
 
