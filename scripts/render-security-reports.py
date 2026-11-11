@@ -31,8 +31,11 @@ STAGES = [
     ("monitoring", "Monitoring verification", "API request, image and scrape-target check"),
     ("prometheus", "Metrics collection", "Prometheus, Node Exporter"),
     ("grafana", "Dashboards", "Grafana"),
+    ("dependabot", "Dependency updates and security alerts", "Dependabot"),
 ]
-LATER_STAGES = {"build", "quality", "artifact", "image", "registry", "deploy", "acceptance", "monitoring", "prometheus", "grafana"}
+LATER_STAGES = {"build", "quality", "artifact", "image", "registry", "deploy", "acceptance", "monitoring", "prometheus", "grafana", "dependabot"}
+# Stages whose evidence carries its own checks. Dependabot findings need attention but do not block delivery.
+EVIDENCE_STAGES = {"prometheus": "failed", "grafana": "failed", "dependabot": "attention"}
 CHART_COLORS = ["#075e91", "#b35900", "#116329", "#8250df"]
 
 
@@ -41,11 +44,52 @@ def read_evidence(folder, name):
     return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
 
 
-def evidence_status(evidence):
+def evidence_status(evidence, unmet="failed"):
     required = [c for c in evidence.get("checks", []) if c.get("required", True)]
     if not required:
         return "facts only"
-    return "passed" if all(c["ok"] for c in required) else "failed"
+    return "passed" if all(c["ok"] for c in required) else unmet
+
+
+def dependabot_page(folder, esc):
+    evidence = read_evidence(folder, "dependabot")
+    if not evidence:
+        return ""
+    out = "<h2>Findings</h2><table><tr><th>Check</th><th>Result</th><th>Detail</th></tr>"
+    for check in evidence["checks"]:
+        outcome = "ok" if check["ok"] else ("needs attention" if check.get("required", True) else "not observed (informational)")
+        css = "" if check["ok"] else " class='attention'"
+        out += f"<tr><td>{esc(check['name'])}</td><td{css}>{esc(outcome)}</td><td>{esc(check['detail'])}</td></tr>"
+    out += "</table>"
+    alerts = evidence["alerts"]
+    out += "<h2>Security alerts (Dependabot alerts API)</h2>"
+    if alerts["status"] != "enabled":
+        out += (f"<p class='banner'>Dependabot security alerts are <strong>{esc(alerts['status'])}</strong> for this repository "
+                f"(HTTP {esc(str(alerts.get('http_status', '')))}: {esc(alerts.get('message', '').rstrip('.'))}). Vulnerable dependencies are therefore "
+                "not being reported by Dependabot. The repository owner can enable them under Settings &gt; Code security "
+                "(Dependabot alerts, and optionally Dependabot security updates). Trivy still scans dependencies before every build.</p>")
+    elif not alerts["open"]:
+        out += "<p>Alerts are enabled and there are no open Dependabot alerts.</p>"
+    else:
+        out += "<table><tr><th>Severity</th><th>Package</th><th>Advisory</th><th>Vulnerable range</th><th>Patched in</th><th>Manifest</th></tr>"
+        for a in alerts["open"]:
+            css = " class='failed'" if a["severity"] in ("critical", "high") else ""
+            out += (f"<tr><td{css}>{esc(a['severity'])}</td><td>{esc(a['package'])} ({esc(a['ecosystem'])})</td>"
+                    f"<td><a href='{esc(a['url'])}'>{esc(a['ghsa'])}</a> {esc(a.get('cve') or '')}<br>{esc(a['summary'])}</td>"
+                    f"<td>{esc(a['vulnerable_range'])}</td><td>{esc(a.get('patched') or 'no fix yet')}</td><td>{esc(a.get('manifest') or '-')}</td></tr>")
+        out += "</table>"
+    out += "<h2>Open version-update pull requests</h2><p>Major and variant changes (for example a new JDK in a Docker tag) need a human review; failing CI blocks a merge.</p>"
+    out += "<table><tr><th>PR</th><th>Ecosystem</th><th>Package</th><th>From</th><th>To</th><th>Change</th><th>Age</th><th>CI</th></tr>"
+    for u in evidence["update_pull_requests"]:
+        risky = u["update_type"] in ("major", "variant")
+        out += (f"<tr><td><a href='{esc(u['url'])}'>#{u['number']}</a></td><td>{esc(u['ecosystem'])}</td><td>{esc(u['package'])}</td>"
+                f"<td>{esc(u['from'])}</td><td>{esc(u['to'])}</td><td{' class=attention' if risky else ''}>{esc(u['update_type'])}</td>"
+                f"<td>{u['age_days']} days</td><td{' class=failed' if u['ci'] == 'failing' else ''}>{esc(u['ci'])}</td></tr>")
+    out += "</table><h2>Configuration (.github/dependabot.yml)</h2><table><tr><th>Ecosystem</th><th>Directory</th><th>Schedule</th><th>Open PR limit</th></tr>"
+    out += "".join(f"<tr><td>{esc(str(c['ecosystem']))}</td><td>{esc(str(c['directory']))}</td><td>{esc(str(c['interval']))}</td>"
+                   f"<td>{esc(str(c['open_pull_requests_limit']))}</td></tr>" for c in evidence["config"]) + "</table>"
+    out += f"<p>Collected {esc(evidence['generated_utc'])} UTC from the GitHub API for {esc(evidence['repository'])}.</p>"
+    return out
 
 
 def monitoring_measurements(folder):
@@ -144,8 +188,8 @@ def stage_status(folder, name):
     section = folder / name
     if name == "acceptance" and (section / "acceptance-result.json").is_file():
         return json.loads((section / "acceptance-result.json").read_text(encoding="utf-8")).get("status", "unavailable")
-    if name in ("prometheus", "grafana") and read_evidence(folder, name):
-        return evidence_status(read_evidence(folder, name))
+    if name in EVIDENCE_STAGES and read_evidence(folder, name):
+        return evidence_status(read_evidence(folder, name), EVIDENCE_STAGES[name])
     if not section.is_dir():
         return "not run in this snapshot"
     records = command_records(section)
@@ -256,6 +300,8 @@ def render(folder):
     links += quality_links
     measurements["image"] = image_measurements(folder)
     measurements.update(monitoring_measurements(folder))
+    dependabot = read_evidence(folder, "dependabot")
+    measurements["dependabot"] = dependabot.get("summary", []) if dependabot else []
     for name in ("artifact", "registry", "deploy", "monitoring"):
         facts = read_facts(folder / name)
         for key in ("match", "snapshot_version", "image", "digest"):
@@ -271,6 +317,7 @@ def render(folder):
         stats += measurements[name]
     stats += [f"Prometheus: {line}" for line in measurements["prometheus"]]
     stats += [f"Grafana: {line}" for line in measurements["grafana"]]
+    stats += [f"Dependabot: {line}" for line in measurements["dependabot"]]
     acceptance = folder / "acceptance"
     nmap_path = acceptance / "acceptance-result.json"
     nmap = json.loads(nmap_path.read_text(encoding="utf-8")) if nmap_path.is_file() else None
@@ -283,14 +330,14 @@ def render(folder):
     head = os.environ.get("GITHUB_SHA", "local")
     files = [p for p in sorted(folder.rglob("*")) if p.is_file() and p.name != "index.html"]
     body = """<!doctype html><html lang="en"><meta charset="utf-8"><title>DevSecOps security reports</title>
-<style>body{font:17px/1.5 Arial,sans-serif;color:#172332;max-width:1100px;margin:40px auto;padding:0 24px}h1{font-size:32px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:10px;text-align:left}th{background:#eef3f7}a{color:#075e91}code{overflow-wrap:anywhere}li{margin:8px 0}.passed{color:#116329;font-weight:bold}.failed{color:#a40e26;font-weight:bold}.skip{color:#6a737d}@media print{body{margin:0;font-size:12px}a{color:inherit}}</style>"""
+<style>body{font:17px/1.5 Arial,sans-serif;color:#172332;max-width:1100px;margin:40px auto;padding:0 24px}h1{font-size:32px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:10px;text-align:left}th{background:#eef3f7}a{color:#075e91}code{overflow-wrap:anywhere}li{margin:8px 0}.passed{color:#116329;font-weight:bold}.failed{color:#a40e26;font-weight:bold}.skip{color:#6a737d}.attention{color:#9a6700;font-weight:bold}.banner{background:#fff8c5;border:1px solid #d4a72c;padding:12px 16px}@media print{body{margin:0;font-size:12px}a{color:inherit}}</style>"""
     body += f"<h1>DevSecOps security reports</h1><p>Report execution revision: <code>{esc(head)}</code><br>Run: <a href='{esc(run)}'>{esc(run)}</a></p>"
     body += "<p>Order: checkout, local-hook replay and commit security gates before Maven compilation; Nmap acceptance after deployment. Each original record retains its own execution time and provenance. Threat modeling remains a human review activity.</p>"
     body += "<h2>Pipeline stages at a glance</h2><table><tr><th>Stage</th><th>Tool</th><th>Outcome</th><th>What it measured</th><th>Report</th></tr>"
     summary_rows = []
     for name, title, tools in STAGES:
         status = stage_status(folder, name)
-        css = "passed" if status == "passed" else "failed" if status == "failed" else "skip"
+        css = status if status in ("passed", "failed", "attention") else "skip"
         if status == "not run in this snapshot":
             measured = ""  # Never describe measurements for a stage that left no evidence.
         elif name == "acceptance":
@@ -353,6 +400,7 @@ def render(folder):
         if measurements.get(name):
             page += "<h2>Measured by this stage</h2><ul>" + "".join(f"<li>{esc(s)}</li>" for s in measurements[name]) + "</ul>"
         page += monitoring_page(name, folder, esc) if name in ("prometheus", "grafana") else ""
+        page += dependabot_page(folder, esc) if name == "dependabot" else ""
         facts = read_facts(section)
         if facts:
             page += "<h2>Recorded facts</h2><table>" + "".join(f"<tr><th>{esc(k)}</th><td><code>{esc(v)}</code></td></tr>" for k, v in facts.items()) + "</table>"

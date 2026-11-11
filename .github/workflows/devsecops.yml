@@ -153,9 +153,38 @@ jobs:
           path: .tools/reports/image/trivy-image.json
           retention-days: 14
 
+  dependabot:
+    name: Production - Dependabot updates and alerts
+    needs: trivy
+    # Production-phase report: findings are highlighted, not blocking. Runs even if the previous phase failed.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      vulnerability-alerts: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Collect Dependabot configuration, open update PRs and security alerts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/capture-check.py dependabot .tools/reports/dependabot -- python scripts/dependabot-report.py .tools/reports/dependabot
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: stage-dependabot
+          path: .tools/reports/
+          retention-days: 30
+
   reports:
     name: DevSecOps security reports - every stage of this push
-    needs: [security, build, docker, trivy]
+    needs: [security, build, docker, trivy, dependabot]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -239,7 +268,7 @@ jobs:
 
   email:
     name: 7 - Email notification
-    needs: [security, build, docker, trivy, deploy, reports]
+    needs: [security, build, docker, trivy, dependabot, deploy, reports]
     # Always the last stage on master pushes. The k3s deploy job is disabled by design
     # (AZURE_DEPLOY_ENABLED=false), so a skipped job is not reported as a problem here.
     if: always() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request' && vars.EMAIL_ENABLED == 'true'

@@ -93,7 +93,7 @@ jobs:
         if: always()
         run: |
           mkdir -p .tools/reports/quality
-          cp .scannerwork/report-task.txt .tools/reports/quality/ || echo "No SonarQube task record was produced"
+          cp target/sonar/report-task.txt .tools/reports/quality/ || echo "No SonarQube task record was produced"
       - name: 4 - Nexus publish the tested Maven artifact
         env:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -150,7 +150,7 @@ jobs:
           path: |
             target/surefire-reports
             target/site/jacoco
-            .scannerwork/report-task.txt
+            target/sonar/report-task.txt
             compose-result.json
           retention-days: 14
   acceptance:
@@ -161,7 +161,7 @@ jobs:
       id-token: write
     uses: ./.github/workflows/acceptance-nmap.yml
   monitoring:
-    name: 9 - Monitoring - API, Prometheus and Grafana
+    name: 9 - Production - Monitoring with Prometheus and Grafana
     needs: [delivery, acceptance]
     environment: azure-lab
     runs-on: ubuntu-24.04
@@ -206,9 +206,37 @@ jobs:
           name: monitoring-evidence
           path: monitoring-result.json
           retention-days: 30
+  dependabot:
+    name: 10 - Production - Dependabot updates and alerts
+    needs: acceptance
+    # Production-phase report: findings are highlighted, not blocking. Runs even if the previous phase failed.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      vulnerability-alerts: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Collect Dependabot configuration, open update PRs and security alerts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/capture-check.py dependabot .tools/reports/dependabot -- python scripts/dependabot-report.py .tools/reports/dependabot
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: stage-dependabot
+          path: .tools/reports/
+          retention-days: 30
   reports:
     name: DevSecOps security reports - all phases
-    needs: [security, delivery, acceptance, monitoring]
+    needs: [security, delivery, acceptance, monitoring, dependabot]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -244,8 +272,8 @@ jobs:
           path: .tools/reports/
           retention-days: 30
   email:
-    name: 10 - Email notification
-    needs: [security, delivery, acceptance, monitoring, reports]
+    name: 11 - Email notification
+    needs: [security, delivery, acceptance, monitoring, dependabot, reports]
     if: always() && github.ref == 'refs/heads/master' && vars.EMAIL_ENABLED == 'true'
     environment: azure-lab
     runs-on: ubuntu-24.04
