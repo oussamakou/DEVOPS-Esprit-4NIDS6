@@ -60,3 +60,6 @@ nexus-secrets.json
 
 # Regenerable: python scripts/build-final-report.py
 documentation/FINAL-REPORT.html
+
+# Regenerable: python scripts/build-rapport-fr.py
+documentation/RAPPORT-SYNTHESE-FR.html

@@ -507,6 +507,28 @@ class RunnerLaneTests(unittest.TestCase):
                 deploy_runner.smoke(expected)
 
 
+rapport_fr = load("rapport_fr", "build-rapport-fr.py")
+
+
+class FrenchSummaryTests(unittest.TestCase):
+    def test_every_cited_screenshot_exists(self):
+        self.assertEqual([n for n in rapport_fr.referenced_files() if not (rapport_fr.SHOTS / n).is_file()], [])
+
+    def test_summary_states_its_link_to_the_full_report_and_its_source_run(self):
+        text = rapport_fr.build("test")
+        self.assertIn('lang="fr"', text)
+        self.assertIn("synthèse française du rapport complet", text)
+        self.assertIn("FINAL-REPORT.pdf", text)
+        self.assertIn(rapport_fr.REFERENCE_RUN, text)
+
+    def test_summary_does_not_overstate_results(self):
+        text = rapport_fr.build("test")
+        self.assertNotIn("tous passés", text)  # Dependabot is "attention", not passed
+        self.assertIn("16 / 17", text)
+        self.assertEqual(sum(1 for r in rapport_fr.RISKS if r[4] == "Signalé"), 1)
+        self.assertEqual(rapport_fr.MAX_PAGES, 35)
+
+
 final_report = load("final_report", "build-final-report.py")
 
 
